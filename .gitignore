@@ -2,5 +2,5 @@ build/*
 .vscode/*
 
 # These will be added later
-std/*
+std/co/*
 examples/*

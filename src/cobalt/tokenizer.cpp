@@ -269,7 +269,8 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             step(c);
             unsigned char c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 4;
+            c2 <<= 4;
+            c2 |= c3;
             if (topb) {out.push_back({loc, {'"', (char)c2}}); topb = false;}
             else out.back().data.push_back((char)c2);
             lwbs = false;
@@ -283,80 +284,90 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           if (lwbs) {
             ADV
             step(c);
-            unsigned short c2 = c2x(c);
+            uint16_t c2 = c2x(c);
             if (c2 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
             ADV
             step(c);
             unsigned char c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 4;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 8;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 12;
+            c2 <<= 4;
+            c2 |= c3;
             if (topb) {out.push_back({loc, "\""}); topb = false;}
             append(out.back().data, (char32_t)int32_t(c2));
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"x"}); topb = false;}
-            else out.back().data.push_back('x');
+            if (topb) {out.push_back({loc, "\"u"}); topb = false;}
+            else out.back().data.push_back('u');
           }
           break;
         case 'U':
           if (lwbs) {
             ADV
             step(c);
-            unsigned int c2 = c2x(c);
+            uint32_t c2 = c2x(c);
             if (c2 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
             ADV
             step(c);
             unsigned char c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 4;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 8;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 12;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 16;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 20;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 24;
+            c2 <<= 4;
+            c2 |= c3;
             ADV
             step(c);
             c3 = c2x(c);
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-            c2 |= c3 << 28;
+            c2 <<= 4;
+            c2 |= c3;
             if (topb) {out.push_back({loc, "\""}); topb = false;}
             append(out.back().data, (char32_t)c2);
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"x"}); topb = false;}
-            else out.back().data.push_back('x');
+            if (topb) {out.push_back({loc, "\"U"}); topb = false;}
+            else out.back().data.push_back('U');
           }
           break;
         default:
@@ -367,473 +378,10 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
     }
     else {
       switch (c) {
-        case '@': {
-          topb = true;
-          auto s = it, e = it;
-          unsigned char ec = 0;
-          while (!ec && advance(e, end, c)) {
-            switch (c) {
-              case 0x85:
-              case 0xA0:
-              case 0x1680:
-              case 0x2000:
-              case 0x2001:
-              case 0x2002:
-              case 0x2003:
-              case 0x2004:
-              case 0x2005:
-              case 0x2006:
-              case 0x2007:
-              case 0x2008:
-              case 0x2009:
-              case 0x200A:
-              case 0x2028:
-              case 0x2029:
-              case 0x202F:
-              case 0x205F:
-              case 0x3000:
-                if (flags.warn_whitespace) flags.onerror(loc, "unusual whitespace character U+" + as_hex(c), WARNING);
-              case 0x09:
-              case 0x0A:
-              case 0x0B:
-              case 0x0C:
-              case 0x0D:
-              case 0x20:
-                ec = 1;
-                break;
-              case '(':
-                ec = 2;
-                break;
-            }
-            switch (ec) {
-              case 0:
-                if (e != end) {
-                  flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                  return out;
-                }
-                {
-                  auto macro = sstring::get(std::string_view{s, e});
-                  auto it = directives.find(macro);
-                  if (it == directives.end()) out.push_back({loc, "@"s + macro});
-                  auto d = it->second;
-                  flags_t f = flags;
-                  f.update_location = false;
-                  auto toks = tokenize(d("", {loc, flags.onerror}), loc, f, directives);
-                  out.insert(out.end(), toks.begin(), toks.end());
-                }
-              case 1: {
-                auto macro = sstring::get(std::string_view{s, e});
-                auto it = directives.find(macro);
-                if (it == directives.end()) out.push_back({loc, "@"s + macro});
-                auto d = it->second;
-                flags_t f = flags;
-                f.update_location = false;
-                auto toks = tokenize(d("", {loc, flags.onerror}), loc, f, directives);
-                out.insert(out.end(), toks.begin(), toks.end());
-              } break;
-              case 2: {
-                auto e2 = e;
-                bool graceful = false;
-                while (!graceful && advance(e2, end, c)) {
-                  switch (c) {
-                    case '\'':
-                      switch (c) {
-                        case '\'':
-                          flags.onerror(loc, "empty character literal", WARNING);
-                          break;
-                        case '\\':
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (flags.update_location) {STEP}
-                          switch (c) {
-                            case 'x':
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                              }
-                              break;
-                            case 'u':
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                              }
-                              break;
-                            case 'U':
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                                if (c == '\'') break;
-                              }
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                              else {
-                                flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                                if (flags.update_location) {STEP}
-                              }
-                              break;
-                          }
-                          break;
-                        default:
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (flags.update_location) {STEP}
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (c != '\'') {
-                            flags.onerror(loc, "character literal is too long", ERROR);
-                            do {
-                              if (!advance(e2, end, c)) {
-                                if (e2 == end) {flags.onerror(loc, "unterminated character literal", ERROR); return out;}
-                                else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                              }
-                              step(c);
-                            } while (c != '\'');
-                          }
-                      }
-                      break;
-                    case '"': {
-                      uint8_t state = 1; // 0 = exit, 1 = normal, 2 = lwbs
-                      while (state && advance(e2, end, c)) switch (c) {
-                        case '\\':
-                          if (state == 2) state = 1;
-                          else state = 2;
-                          break;
-                        case '"':
-                          if (state == 2) state = 1;
-                          else state = 0;
-                          break;
-                        case 'x':
-                          if (state != lwbs) break;
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                          }
-                          break;
-                        case 'u':
-                          if (state != lwbs) break;
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                          }
-                          break;
-                        case 'U':
-                          if (state != lwbs) break;
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                            if (c == '"') {
-                              state = 0;
-                              break;
-                            }
-                          }
-                          if (!advance(e2, end, c)) {
-                            if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                          }
-                          if (is_hex(c)) {if (flags.update_location) ++loc.col;}
-                          else {
-                            flags.onerror(loc, '\''  + to_string(c) + "' is not a hexadecimal character", ERROR);
-                            if (flags.update_location) {STEP}
-                          }
-                          break;
-                        default:
-                          state = 1;
-                      }
-                      if (state) {
-                        if (e2 == end) {flags.onerror(loc, "unterminated string literal", ERROR); return out;}
-                        else flags.onerror(loc, "invalid UTF-8 character", ERROR);
-                      }
-                    } break;
-                    case ')':
-                      graceful = true;
-                      break;
-                  }
-                }
-                if (!graceful) {
-                  if (e2 == end) {flags.onerror(loc, "unterminated macro", ERROR); return out;}
-                  else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-                }
-                auto macro = sstring::get(std::string_view{s, e});
-                auto it = directives.find(macro);
-                if (it == directives.end()) out.push_back({loc, "@"s + macro});
-                auto d = it->second;
-                flags_t f = flags;
-                f.update_location = false;
-                auto toks = tokenize(d({e, e2}, {loc, flags.onerror}), loc, f, directives);
-                out.insert(out.end(), toks.begin(), toks.end());
-              }
-            }
-          }
-        } break;
+        case '@':
+          flags.onerror(loc, "macros are not currently supported", CRITICAL);
+          return out;
+          break;
         case '\'':
           ADV
           if (flags.update_location) {STEP}
@@ -864,24 +412,27 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
                   step(c);
                   unsigned char c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 4;
+                  c2 <<= 4;
+                  c2 |= c3;
                   out.push_back({loc, {'\'', (char)c2}});
                 } break;
                 case 'u': {
                   ADV
                   step(c);
-                  unsigned short c2 = c2x(c);
+                  uint16_t c2 = c2x(c);
                   if (c2 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
                   ADV
                   step(c);
                   unsigned char c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 4;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 8;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
@@ -895,43 +446,50 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
                 case 'U': {
                   ADV
                   step(c);
-                  unsigned short c2 = c2x(c);
+                  uint32_t c2 = c2x(c);
                   if (c2 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
                   ADV
                   step(c);
                   unsigned char c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 4;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 8;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 12;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 16;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 20;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 24;
+                  c2 <<= 4;
+                  c2 |= c3;
                   ADV
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 28;
+                  c2 <<= 4;
+                  c2 |= c3;
                   std::string str(5, '\0');
                   str[0] = '\'';
                   std::memcpy(str.data() + 1, &c2, 4);

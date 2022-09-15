@@ -9,5 +9,6 @@ namespace cobalt {
   };
   inline bool operator==(token const& lhs, token const& rhs) {return lhs.loc == rhs.loc && lhs.data == rhs.data;}
   inline bool operator!=(token const& lhs, token const& rhs) {return lhs.loc != rhs.loc || lhs.data != rhs.data;}
+  template <class T> inline decltype(auto) operator<<(T& os, token const& tok) {return os << tok.loc << ": " << tok.data;}
 }
 #endif

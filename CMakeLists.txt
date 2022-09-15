@@ -24,9 +24,18 @@ add_library(cobalt
 add_executable(co src/co/main.cpp)
 target_link_libraries(co cobalt)
 
+# tests
 add_executable(test tests/main.cpp tests/test.hpp
   tests/tokenizer.hpp)
 target_link_libraries(test cobalt)
+
+# test executables
+add_executable(tokenizer test-programs/tokenizer.cpp)
+target_link_libraries(tokenizer cobalt)
+
 # build standard library
 include(./cmake/StdLib.cmake)
 add_stdlib(co-std PREFIX __co_ TARGETS std/c/compat.h std/c/std.h std/c/alloc.cpp std/c/file.cpp LIBS c gcc)
+
+add_custom_target(main)
+add_dependencies(main cobalt co co-std)

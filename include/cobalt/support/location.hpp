@@ -11,6 +11,6 @@ namespace cobalt {
   };
   inline bool operator==(location const& lhs, location const& rhs) {return lhs.file == rhs.file && lhs.line == rhs.line && lhs.col == rhs.col;}
   inline bool operator!=(location const& lhs, location const& rhs) {return lhs.file != rhs.file || lhs.line != rhs.line || lhs.col != rhs.col;}
-  inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, location const& loc) {return os << loc.file << ':' << loc.line << ':' << loc.col;}
+  template <class T> inline decltype(auto) operator<<(T& os, location const& loc) {return os << loc.file << ':' << loc.line << ':' << loc.col;}
 }
 #endif

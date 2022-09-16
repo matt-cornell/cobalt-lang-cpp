@@ -212,6 +212,10 @@ namespace test {
         os << (res ? "passed" : "failed") << std::endl;
         return res ? std::pair<std::vector<std::string>, std::size_t>{{}, 1} : std::pair<std::vector<std::string>, std::size_t>{std::vector{name}, 1};
       }
+      else if (std::get<0>(tests_).empty()) {
+        os << prefix << "testing empty group " << name << "... passed" << std::endl;
+        return {{}, 0};
+      }
       else {
         std::string pf = "  " + prefix;
         std::pair<std::vector<std::string>, std::size_t> res;

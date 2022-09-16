@@ -9,7 +9,7 @@ namespace cobalt {
   namespace ast {
     struct ast_base {
       location loc;
-      ast_base(sstring::string file, std::size_t line, std::size_t col) : loc{file, line, col} {}
+      ast_base(sstring file, std::size_t line, std::size_t col) : loc{file, line, col} {}
       ast_base(location loc) : loc(loc) {}
       virtual ~ast_base() noexcept = 0;
       virtual bool eq(ast_base const* other) const = 0;
@@ -35,7 +35,7 @@ namespace cobalt {
       return *this;
     }
     location loc() const noexcept {return ptr->loc;}
-    sstring::string file() const noexcept {return ptr->loc.file;}
+    sstring file() const noexcept {return ptr->loc.file;}
     std::size_t line() const noexcept {return ptr->loc.line;}
     std::size_t col() const noexcept {return ptr->loc.col;}
     inline typed_value codegen(compile_context& ctx = global) const {return ptr->codegen(ctx);}

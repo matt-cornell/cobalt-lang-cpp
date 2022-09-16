@@ -6,7 +6,7 @@
 namespace cobalt::types {
   struct integer : type_base {
     int nbits;
-    sstring::string name() const override {return sstring::get((nbits < 0 ? llvm::Twine("u") + llvm::Twine(-nbits) : llvm::Twine("i") + llvm::Twine(nbits)).str());}
+    sstring name() const override {return sstring::get((nbits < 0 ? llvm::Twine("u") + llvm::Twine(-nbits) : llvm::Twine("i") + llvm::Twine(nbits)).str());}
     std::size_t size() const override {return (nbits + 7) / 8;}
     std::size_t align() const override {
       if (nbits <= 8) return 1;
@@ -28,7 +28,7 @@ namespace cobalt::types {
     inline static std::unordered_map<int, std::unique_ptr<integer>> instances;
   };
   struct float16 : type_base {
-    sstring::string name() const override {return sstring::get("f16");}
+    sstring name() const override {return sstring::get("f16");}
     std::size_t size() const override {return 2;}
     std::size_t align() const override {return 2;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getHalfTy(*ctx.context);}
@@ -38,7 +38,7 @@ namespace cobalt::types {
     static float16 inst;
   };
   struct float32 : type_base {
-    sstring::string name() const override {return sstring::get("f32");}
+    sstring name() const override {return sstring::get("f32");}
     std::size_t size() const override {return 4;}
     std::size_t align() const override {return 4;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getFloatTy(*ctx.context);}
@@ -48,7 +48,7 @@ namespace cobalt::types {
     static float32 inst;
   };
   struct float64 : type_base {
-    sstring::string name() const override {return sstring::get("f64");}
+    sstring name() const override {return sstring::get("f64");}
     std::size_t size() const override {return 8;}
     std::size_t align() const override {return 8;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getDoubleTy(*ctx.context);}
@@ -58,7 +58,7 @@ namespace cobalt::types {
     static float64 inst;
   };
   struct float128 : type_base {
-    sstring::string name() const override {return sstring::get("f128");}
+    sstring name() const override {return sstring::get("f128");}
     std::size_t size() const override {return 16;}
     std::size_t align() const override {return 8;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getFP128Ty(*ctx.context);}

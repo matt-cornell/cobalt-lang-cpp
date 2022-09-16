@@ -26,7 +26,7 @@ namespace cobalt::types {
   }
   struct tuple : type_base {
     std::vector<type_ptr> types;
-    sstring::string name() const override;
+    sstring name() const override;
     std::size_t size() const override;
     std::size_t align() const override;
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override;
@@ -37,7 +37,7 @@ namespace cobalt::types {
   };
   struct variant : type_base {
     std::unordered_set<type_ptr> types;
-    sstring::string name() const override;
+    sstring name() const override;
     std::size_t size() const override;
     std::size_t align() const override;
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override;

@@ -118,6 +118,28 @@ bool is_hex(char32_t c) {
   if (c >= 'A' && c <= 'F') return true;
   return false;
 }
+template <class I> std::string parse_num(I& it, I end, bound_handler const& handler) {
+  if (*it == '0') switch (*++it) {
+    case 'x':
+    case 'X':
+      // parse hex
+      break;
+    case 'b':
+    case 'B':
+      // parse binary
+      break;
+    case '.':
+      // parse float
+      break;
+    default:
+      // parse octal
+      
+      break;
+  }
+  else {
+    // parse decimal
+  }
+}
 #pragma endregion
 #pragma region macros
 #define ADV \
@@ -138,25 +160,7 @@ bool is_hex(char32_t c) {
   else ++loc.col;
 #pragma endregion
 #define DEF_PP(NAME, ...) {sstring::get(#NAME), [](std::string_view code, bound_handler onerror)->std::string __VA_ARGS__},
-pp_map cobalt::default_directives = {
-  DEF_PP(file, {
-    auto f = llvm::MemoryBuffer::getFile(code, true, false);
-    if (!f) {
-      auto str = f.getError().message();
-      onerror(str, ERROR);
-      return "\"error: " + str + '"';
-    }
-    return '"' + std::string(f.get()->getBuffer().data(), f.get()->getBufferSize()) + '"';
-  })
-  DEF_PP(include, {
-    auto f = llvm::MemoryBuffer::getFile(code, true, false);
-    if (!f) {
-      onerror(f.getError().message(), ERROR);
-      return "";
-    }
-    return std::string(f.get()->getBuffer().data(), f.get()->getBufferSize());
-  })
-};
+pp_map cobalt::default_directives;
 std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t flags, pp_map const& directives) {
   auto it = code.begin(), end = code.end();
   std::vector<token> out;
@@ -517,6 +521,19 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '"':
           in_string = true;
           break;
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+          if (topb) out.push_back({loc, parse_num(it, end, {loc, flags.onerror})});
+          else out.back().data.push_back((char)c);
+          break;
 #pragma region whitespace_characters
         case 0x85:
         case 0xA0:
@@ -554,6 +571,8 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case ']':
         case '{':
         case '}':
+        case ':':
+        case ';':
           out.push_back({loc, {char(c)}});
           topb = true;
           break;

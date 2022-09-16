@@ -13,7 +13,7 @@ namespace cobalt {
       type_base(type_base const&) = delete;
       type_base(type_base&&) = delete;
       virtual ~type_base() = 0;
-      virtual sstring::string name() const = 0;
+      virtual sstring name() const = 0;
       virtual std::size_t size() const = 0;
       virtual std::size_t align() const = 0;
       virtual llvm::Type* llvm_type(location loc, compile_context& ctx) const = 0;

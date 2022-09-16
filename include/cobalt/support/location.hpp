@@ -5,7 +5,7 @@
 #include <llvm/Support/raw_ostream.h>
 namespace cobalt {
   struct location {
-    sstring::string file;
+    sstring file;
     std::size_t line, col;
     std::string format() const {return (llvm::Twine(llvm::StringRef(file)) + ":" + llvm::Twine(line) + ":" + llvm::Twine(col)).str();}
   };

@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
       str.assign(std::istreambuf_iterator<char>{ifs}, {});
     }
     auto toks = cobalt::tokenize(str, cobalt::sstring::get(file == "-" ? "<stdin>" : file));
-    for (auto const& tok : toks) std::cout << tok << std::endl;
+    for (auto const& tok : toks) std::cout << tok.loc << '\t' << tok.data << std::endl;
     fail |= h.errors;
   }
   return fail;

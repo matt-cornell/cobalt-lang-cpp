@@ -36,6 +36,7 @@ target_link_libraries(tokenizer cobalt)
 # build standard library
 include(./cmake/StdLib.cmake)
 add_stdlib(co-std PREFIX __co_ TARGETS std/c/compat.h std/c/std.h std/c/alloc.cpp std/c/file.cpp LIBS c gcc)
+set_property(TARGET co-std PROPERTY OUTPUT_NAME co)
 
 add_custom_target(main)
 add_dependencies(main cobalt co co-std)

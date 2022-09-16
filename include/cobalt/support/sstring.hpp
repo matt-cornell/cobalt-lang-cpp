@@ -5,24 +5,11 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
-namespace cobalt::sstring {
-  class string : public std::string_view {
+namespace cobalt {
+  class sstring : public std::string_view {
     using std::string_view::basic_string_view;
-    string() = delete;
-    string(std::string_view str) : std::string_view(str) {}
-    friend class getter_t;
-  };
-  inline std::string operator+(std::string_view lhs, std::string_view rhs) {
-    std::string out(lhs.size() + rhs.size(), 0);
-    std::memcpy(out.data(), lhs.data(), lhs.size());
-    std::memcpy(out.data() + lhs.size(), rhs.data(), rhs.size());
-    return out;
-  }
-  inline bool operator==(string lhs, string rhs) {return lhs.data() == rhs.data();}
-  #if __cplusplus < 202002LL
-  inline bool operator!=(string lhs, string rhs) {return lhs.data() != rhs.data();}
-  #endif
-  class getter_t {
+    sstring() = delete;
+    sstring(std::string_view str) : std::string_view(str) {}
     struct optional_deleter {
       bool del;
       optional_deleter(bool del) : del(del) {}
@@ -49,21 +36,31 @@ namespace cobalt::sstring {
     };
     inline static set_t strings;
   public:
-    template <class K> string operator()(K&& val) const {
+    using string [[deprecated("use cobalt::sstring instead of cobalt::sstring")]] = sstring;
+    template <class K> static sstring get(K&& val) {
       if constexpr(heterogenous_lookup<set_t, decltype((std::forward<K>(val)))>::value) {
         auto it = strings.find(std::forward<K>(val));
         if (it == strings.end()) it = strings.insert(ptr_t(new std::string(std::forward<K>(val)), true)).first;
-        return string(**it);
+        return sstring(**it);
       }
       else {
         std::string str(std::forward<K>(val));
         auto it = strings.find(ptr_t(&str, false));
         if (it == strings.end()) it = strings.insert(ptr_t(new std::string(std::move(str)), true)).first;
-        return string(**it);
+        return sstring(**it);
       }
     }
   };
-  inline const getter_t get;
+  inline std::string operator+(std::string_view lhs, std::string_view rhs) {
+    std::string out(lhs.size() + rhs.size(), 0);
+    std::memcpy(out.data(), lhs.data(), lhs.size());
+    std::memcpy(out.data() + lhs.size(), rhs.data(), rhs.size());
+    return out;
+  }
+  inline bool operator==(sstring lhs, sstring rhs) {return lhs.data() == rhs.data();}
+  #if __cplusplus < 202002LL
+  inline bool operator!=(sstring lhs, sstring rhs) {return lhs.data() != rhs.data();}
+  #endif
 }
-namespace std {template <> struct hash<cobalt::sstring::string> {std::size_t operator()(cobalt::sstring::string const& val) const {return uintptr_t(val.data());}};}
+namespace std {template <> struct hash<cobalt::sstring> {std::size_t operator()(cobalt::sstring const& val) const {return uintptr_t(val.data());}};}
 #endif

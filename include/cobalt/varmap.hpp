@@ -41,15 +41,15 @@ namespace cobalt {
   using symbol_ptr = symbol_type const*;
   struct varmap {
     varmap* parent;
-    std::unordered_map<sstring::string, symbol_type> symbols;
+    std::unordered_map<sstring, symbol_type> symbols;
     bool imported(varmap* other) const {return this == other || (parent && parent->imported(other));}
-    symbol_ptr get(sstring::string name) const {
+    symbol_ptr get(sstring name) const {
       auto it = symbols.find(name);
       return it == symbols.end() ? (parent ? parent->get(name) : nullptr) : &it->second;
     }
-    bool insert(sstring::string name, symbol_type sym) const {return symbols.insert(std::pair{name, sym}).first;}
-    std::unordered_set<sstring::string> include(varmap* other) const {
-      std::unordered_set<sstring::string> out;
+    bool insert(sstring name, symbol_type sym) const {return symbols.insert(std::pair{name, sym}).first;}
+    std::unordered_set<sstring> include(varmap* other) const {
+      std::unordered_set<sstring> out;
       if (!imported(other)) {
         for (auto [name, sym] : other->symbols) {
           auto [it, succ] = symbols.insert({name, sym});

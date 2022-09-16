@@ -10,8 +10,7 @@ string(REPLACE "\n" ";" LLVM_FLAGS "${LLVM_FLAGS}")
 list(POP_FRONT LLVM_FLAGS CPP_FLAGS LINK_DIR LLVM_LIB)
 
 add_compile_options(${CPP_FLAGS})
-link_directories(${LINK_DIR})
-link_libraries(${LLVM_LIB})
+add_link_options(${LINK_DIR} ${LLVM_LIB})
 
 include_directories(include)
 add_library(cobalt
@@ -38,5 +37,11 @@ include(./cmake/StdLib.cmake)
 add_stdlib(co-std PREFIX __co_ TARGETS std/c/compat.h std/c/std.h std/c/alloc.cpp std/c/file.cpp LIBS c gcc)
 set_property(TARGET co-std PROPERTY OUTPUT_NAME co)
 
+# main group to ignore tests
 add_custom_target(main)
 add_dependencies(main cobalt co co-std)
+
+# installation
+install(TARGETS cobalt co-std LIBRARY)
+install(TARGETS co RUNTIME)
+install(DIRECTORY include/ TYPE INCLUDE)

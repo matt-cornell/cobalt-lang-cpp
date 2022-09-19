@@ -1,10 +1,13 @@
 #include "cobalt/tokenizer.hpp"
 #include <cmath>
+#include <numbers>
 #include <llvm/Support/MemoryBuffer.h>
+#include <llvm/ADT/APInt.h>
 #if __cplusplus >= 202002
 #include <bit>
 #define countl1(...) std::countl_one(__VA_ARGS__)
 #define countl0(...) std::countl_zero(__VA_ARGS__)
+#define bitcast(T, ...) std::bit_cast<T>(__VA_ARGS__)
 #else
 static unsigned char countl0(unsigned char c) {
   unsigned char out = 8;
@@ -12,6 +15,8 @@ static unsigned char countl0(unsigned char c) {
   return out;
 }
 static unsigned char countl1(unsigned char c) {return countl0(~c);}
+template <class T, class U> static T bit_cast(U const& val) {return reinterpret_cast<T const&>(val);}
+#define bitcast(T, ...) bit_cast<T>(__VA_ARGS__)
 #endif
 using namespace std::literals;
 using namespace cobalt;
@@ -118,27 +123,94 @@ bool is_hex(char32_t c) {
   if (c >= 'A' && c <= 'F') return true;
   return false;
 }
-template <class I> std::string parse_num(I& it, I end, bound_handler const& handler) {
-  if (*it == '0') switch (*++it) {
-    case 'x':
-    case 'X':
-      // parse hex
-      break;
-    case 'b':
-    case 'B':
-      // parse binary
-      break;
-    case '.':
-      // parse float
-      break;
-    default:
-      // parse octal
-      
-      break;
+template <class T> std::string encode(char c, T const& val) {
+  std::array<char, sizeof(T) + 1> data;
+  data[0] = c;
+  std::memcpy(data.data() + 1, &val, sizeof(T));
+  return std::string(data.data(), sizeof(T) + 1);
+}
+template <class I> std::string parse_num(I& it, I end, bound_handler const& onerror, borrow_function<char32_t(char32_t)> step) {
+  uint32_t decimal_places = 0;
+  constexpr double log2_10 = std::numbers::ln10_v<double> / std::numbers::ln2_v<double>;
+  llvm::APInt int_part;
+  double float_part = 0;
+  bool negative = false, mode_set = true;
+  enum {SIGNED, UNSIGNED, FLOAT} mode = SIGNED;
+  uint16_t nbits = 64;
+  double bits;
+  --it;
+  while (it != end) {
+    char c = *it;
+    step(c);
+    switch (c) {
+      case '0':
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+      case '6':
+      case '7':
+      case '8':
+      case '9':
+        if (decimal_places) float_part += (c - '0') * std::pow(0.1, decimal_places++);
+        else {
+          bits += log2_10;
+          int_part = int_part.zext((unsigned)std::ceil(bits));
+          int_part *= 10;
+          int_part += c - '0';
+        }
+        break;
+      case '.': {
+        char c2 = *(it + 1);
+        if (c2 & 0x80 || c2 < '0' || c2 > '9') goto end;
+        if (decimal_places) {
+          onerror("identifier cannot start with a number", ERROR);
+          goto end;
+        }
+        decimal_places = 1;
+        mode = FLOAT;
+      } break;
+      case 'i':
+        if (mode_set) goto end;
+        mode = SIGNED;
+        mode_set = true;
+        break;
+      case 'u':
+        if (mode_set) goto end;
+        mode = UNSIGNED;
+        mode_set = true;
+        break;
+      case 'f':
+        if (mode_set) goto end;
+        mode = FLOAT;
+        mode_set = true;
+        break;
+      default:
+        goto end;
+    }
+    ++it;
   }
-  else {
-    // parse decimal
+  end:
+  std::string out;
+  switch (mode) {
+    case SIGNED:
+    case UNSIGNED:
+      out.resize(int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE + 2);
+      out[0] = mode == UNSIGNED ? '0' : '2';
+      out[0] |= negative << 1;
+      std::memcpy(out.data() + 1, &nbits, 2);
+      std::memcpy(out.data() + 3, int_part.getRawData(), int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE);
+      break;
+    case FLOAT:
+      float_part += int_part.getLoBits(llvm::APInt::APINT_WORD_SIZE).getZExtValue();
+      if (negative) float_part = -float_part;
+      out.resize(sizeof(double) + 2);
+      out[0] = '4';
+      out[1] = char((signed char)nbits);
+      std::memcpy(out.data() + 2, &float_part, sizeof(double));
   }
+  return out;
 }
 #pragma endregion
 #pragma region macros
@@ -531,7 +603,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '7':
         case '8':
         case '9':
-          if (topb) out.push_back({loc, parse_num(it, end, {loc, flags.onerror})});
+          if (topb) out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
           else out.back().data.push_back((char)c);
           break;
 #pragma region whitespace_characters
@@ -573,10 +645,60 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '}':
         case ':':
         case ';':
+        case '*':
+        case '/':
+        case '%':
+        case '!':
           out.push_back({loc, {char(c)}});
           topb = true;
           break;
 #pragma endregion
+        case '+':
+        case '-':
+        case '&':
+        case '|':
+        case '^':
+        case '<':
+        case '>': {
+          topb = true;
+          char c2 = char((signed char)c);
+          if (out.size() && out.back().data == std::string_view{&c2, 1}) out.back().data.push_back(c2);
+          else out.push_back({loc, {c2}});
+        } break;
+        case '=':
+          topb = true;
+          if (out.size()) {
+            if (out.back().data.size() == 1) switch (out.back().data.front()) {
+              case '+':
+              case '-':
+              case '*':
+              case '/':
+              case '%':
+              case '&':
+              case '|':
+              case '^':
+              case '!':
+              case '=':
+              case '<':
+              case '>':
+                out.back().data.push_back('=');
+                break;
+              default:
+                out.push_back({loc, "="});
+            }
+            else if (out.back().data.size() == 2 && out.back().data[0] == out.back().data[1]) switch (out.back().data.front()) {
+              case '^':
+              case '<':
+              case '>':
+                out.back().data.push_back('=');
+                break;
+              default:
+                out.push_back({loc, "="});
+            }
+            else out.push_back({loc, "="});
+          }
+          else out.push_back({loc, "="});
+          break;
         default:
           if (topb) {out.push_back({loc, ""}); topb = false;}
           append(out.back().data, c);

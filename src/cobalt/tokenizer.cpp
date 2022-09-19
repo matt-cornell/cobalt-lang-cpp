@@ -21,7 +21,7 @@ template <class T, class U> static T bit_cast(U const& val) {return reinterpret_
 using namespace std::literals;
 using namespace cobalt;
 #pragma region misc-functions
-template <class I> bool advance(I& it, I& end, char32_t& c) noexcept(noexcept(*it++)) {
+template <class I> static bool advance(I& it, I& end, char32_t& c) noexcept(noexcept(*it++)) {
   if (it == end) return false;
   switch (countl1((unsigned char)*it)) {
     case 0: c = char32_t(*it++); return true; break;
@@ -59,21 +59,21 @@ template <class I> bool advance(I& it, I& end, char32_t& c) noexcept(noexcept(*i
     default: return false;
   }
 }
-void append(std::string& str, char32_t val) {
+static void append(std::string& str, char32_t val) {
   if (val < 0x80) str.append({char(val & 0xFF)});
   else if (val < 0x800) str.append({char(val >> 6 | 0xC0), char((val & 0x3F) | 0x80)});
   else if (val < 0x10000) str.append({char(val >> 12 | 0xE0), char(((val >> 6) & 0x3F) | 0x80), char((val & 0x3F) | 0x80)});
   else if (val < 0x110000) str.append({char(val >> 18 | 0xF0), char(((val >> 12) & 0x3F) | 0x80), char(((val >> 6) & 0x3F) | 0x80), char((val & 0x3F) | 0x80)});
   else std::exit(-1); // This is unreachable because an invalid character would've been caught in the advance function
 }
-std::string to_string(char32_t val) {
+static std::string to_string(char32_t val) {
   if (val < 0x80) return {char(val & 0xFF)};
   else if (val < 0x800) return {char(val >> 6 | 0xC0), char((val & 0x3F) | 0x80)};
   else if (val < 0x10000) return {char(val >> 12 | 0xE0), char(((val >> 6) & 0x3F) | 0x80), char((val & 0x3F) | 0x80)};
   else if (val < 0x110000) return {char(val >> 18 | 0xF0), char(((val >> 12) & 0x3F) | 0x80), char(((val >> 6) & 0x3F) | 0x80), char((val & 0x3F) | 0x80)};
   else return "";
 }
-std::string as_hex(char32_t c) {
+static std::string as_hex(char32_t c) {
   constexpr char chars[] = "0123456789ABCDEF";
   unsigned char size = 32 - countl0((uint32_t)c);
   size = size > 16 ? (size + 3) / 4 : 4;
@@ -85,7 +85,7 @@ std::string as_hex(char32_t c) {
   } while (size);
   return outs;
 }
-template <class T> std::string as_dec(T c) {
+template <class T> static std::string as_dec(T c) {
   if (!c) return 0;
   constexpr char chars[] = "0123456789";
   unsigned char size = std::ceil(std::log10((int32_t)c));
@@ -97,13 +97,13 @@ template <class T> std::string as_dec(T c) {
   }
   return outs;
 }
-unsigned char c2x(char32_t c) {
+static unsigned char c2x(char32_t c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'a' && c <= 'f') return c - 'a' + 10;
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
   return 255;
 }
-bool is_nl(char32_t c) {
+static bool is_nl(char32_t c) {
   switch (c) {
     case 0x0A:
     case 0x0B:
@@ -117,19 +117,13 @@ bool is_nl(char32_t c) {
       return false;
   }
 }
-bool is_hex(char32_t c) {
+static bool is_hex(char32_t c) {
   if (c >= '0' && c <= '9') return true;
   if (c >= 'a' && c <= 'f') return true;
   if (c >= 'A' && c <= 'F') return true;
   return false;
 }
-template <class T> std::string encode(char c, T const& val) {
-  std::array<char, sizeof(T) + 1> data;
-  data[0] = c;
-  std::memcpy(data.data() + 1, &val, sizeof(T));
-  return std::string(data.data(), sizeof(T) + 1);
-}
-template <class I> std::string parse_num(I& it, I end, bound_handler const& onerror, borrow_function<char32_t(char32_t)> step) {
+template <class I> static std::string parse_num(I& it, I end, bound_handler const& onerror, borrow_function<char32_t(char32_t)> step) {
   uint32_t decimal_places = 0;
   constexpr double log2_10 = std::numbers::ln10_v<double> / std::numbers::ln2_v<double>;
   llvm::APInt int_part;
@@ -645,6 +639,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '}':
         case ':':
         case ';':
+        case ',':
         case '*':
         case '/':
         case '%':
@@ -699,6 +694,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else out.push_back({loc, "="});
           break;
+        case '.': {
+          char c2 = *(it + 1);
+          if (c2 >= '0' && c2 <= '9') out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
+          else out.push_back({loc, "."});
+          topb = true;
+        } break;
         default:
           if (topb) {out.push_back({loc, ""}); topb = false;}
           append(out.back().data, c);

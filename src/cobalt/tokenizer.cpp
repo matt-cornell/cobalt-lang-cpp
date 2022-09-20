@@ -128,14 +128,12 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   constexpr double log2_10 = std::numbers::ln10_v<double> / std::numbers::ln2_v<double>;
   llvm::APInt int_part;
   double float_part = 0;
-  bool negative = false, mode_set = true;
+  bool negative = false, mode_set = false;
   enum {SIGNED, UNSIGNED, FLOAT} mode = SIGNED;
   uint16_t nbits = 64;
-  double bits;
-  --it;
+  double bits = 0;
   while (it != end) {
     char c = *it;
-    step(c);
     switch (c) {
       case '0':
       case '1':
@@ -156,9 +154,18 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
         }
         break;
       case '.': {
+        if (it + 1 >= end) goto end;
         char c2 = *(it + 1);
-        if (c2 & 0x80 || c2 < '0' || c2 > '9') goto end;
+        if (c2 & 0x80 || c2 < '0' || c2 > '9') {
+          if (!mode_set) {
+            mode = FLOAT;
+            decimal_places = 1;
+          }
+          step(*++it);
+          goto end;
+        }
         if (decimal_places) {
+          step(*++it);
           onerror("identifier cannot start with a number", ERROR);
           goto end;
         }
@@ -169,21 +176,28 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
         if (mode_set) goto end;
         mode = SIGNED;
         mode_set = true;
+        step(*++it);
+        goto end; // TODO: add width spec
         break;
       case 'u':
         if (mode_set) goto end;
         mode = UNSIGNED;
         mode_set = true;
+        step(*++it);
+        goto end; // TODO: add width spec
         break;
       case 'f':
         if (mode_set) goto end;
         mode = FLOAT;
         mode_set = true;
+        step(*++it);
+        goto end; // TODO: add width spec
         break;
       default:
         goto end;
     }
     ++it;
+    step(c);
   }
   end:
   std::string out;
@@ -197,7 +211,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
       std::memcpy(out.data() + 3, int_part.getRawData(), int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE);
       break;
     case FLOAT:
-      float_part += int_part.getLoBits(llvm::APInt::APINT_WORD_SIZE).getZExtValue();
+      float_part += int_part.trunc(llvm::APInt::APINT_WORD_SIZE).getZExtValue();
       if (negative) float_part = -float_part;
       out.resize(sizeof(double) + 2);
       out[0] = '4';
@@ -597,7 +611,11 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '7':
         case '8':
         case '9':
-          if (topb) out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
+          if (topb) {
+            --it;
+            out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
+            --loc.col;
+          }
           else out.back().data.push_back((char)c);
           break;
 #pragma region whitespace_characters
@@ -694,12 +712,18 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else out.push_back({loc, "="});
           break;
-        case '.': {
-          char c2 = *(it + 1);
-          if (c2 >= '0' && c2 <= '9') out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
-          else out.push_back({loc, "."});
-          topb = true;
-        } break;
+        case '.':
+          if (it == end) out.push_back({loc, "."});
+          else {
+            char c2 = *it;
+            if (c2 >= '0' && c2 <= '9') {
+              --it;
+              out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
+            }
+            else out.push_back({loc, "."});
+            topb = true;
+          }
+          break;
         default:
           if (topb) {out.push_back({loc, ""}); topb = false;}
           append(out.back().data, c);

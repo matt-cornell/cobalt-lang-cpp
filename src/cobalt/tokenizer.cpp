@@ -132,7 +132,329 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   enum {SIGNED, UNSIGNED, FLOAT} mode = SIGNED;
   uint16_t nbits = 64;
   double bits = 0;
-  while (it != end) {
+  if (*it == '0') switch (*++it) {
+    case 'x':
+    case 'X':
+    #pragma region hex_parsing
+      ++it;
+      while (it != end) {
+        char c = *it;
+        switch (c) {
+          case '0':
+          case '1':
+          case '2':
+          case '3':
+          case '4':
+          case '5':
+          case '6':
+          case '7':
+          case '8':
+          case '9':
+            if (decimal_places) float_part += (c - '0') * std::pow(0.0625, decimal_places++);
+            else {
+              bits += 4;
+              int_part = int_part.zext((unsigned)std::ceil(bits));
+              int_part *= 16;
+              int_part += c - '0';
+            }
+            break;
+          case 'a':
+          case 'b':
+          case 'c':
+          case 'd':
+          case 'e':
+          case 'f':
+            if (decimal_places) float_part += (c - 'a' + 10) * std::pow(0.0625, decimal_places++);
+            else {
+              bits += 4;
+              int_part = int_part.zext((unsigned)std::ceil(bits));
+              int_part *= 16;
+              int_part += c - 'a' + 10;
+            }
+            break;
+          case 'A':
+          case 'B':
+          case 'C':
+          case 'D':
+          case 'E':
+          case 'F':
+            if (decimal_places) float_part += (c - 'A' + 10) * std::pow(0.0625, decimal_places++);
+            else {
+              bits += 4;
+              int_part = int_part.zext((unsigned)std::ceil(bits));
+              int_part *= 16;
+              int_part += c - 'A' + 10;
+            }
+            break;
+          case '.': {
+            if (it + 1 >= end) goto end;
+            char c2 = *(it + 1);
+            if (c2 & 0x80 || ((c2 < '0' || c2 > '9') && (c2 < 'a' || c2 > 'f') && (c2 < 'A' || c2 > 'F'))) {
+              if (!mode_set) {
+                mode = FLOAT;
+                decimal_places = 1;
+              }
+              step(*++it);
+              goto end;
+            }
+            if (decimal_places) {
+              step(*++it);
+              onerror("identifier cannot start with a number", ERROR);
+              goto end;
+            }
+            decimal_places = 1;
+            mode = FLOAT;
+          } break;
+          case 'i':
+            if (mode_set) goto end;
+            mode = SIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          case 'u':
+            if (mode_set) goto end;
+            mode = UNSIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          default:
+            --it;
+            goto end;
+        }
+        ++it;
+        step(c);
+      }
+      break;
+    #pragma endregion
+    case 'b':
+    case 'B':
+    #pragma region bin_parsing
+      ++it;
+      while (it != end) {
+        char c = *it;
+        switch (c) {
+          case '0':
+          case '1':
+            if (decimal_places) float_part += (c - '0') * std::pow(0.5, decimal_places++);
+            else {
+              bits += 1;
+              int_part = int_part.zext((unsigned)std::ceil(bits));
+              int_part *= 2;
+              int_part += c - '0';
+            }
+            break;
+          case '2':
+          case '3':
+          case '4':
+          case '5':
+          case '6':
+          case '7':
+          case '8':
+          case '9':
+            onerror("invalid decimal digit in binary literal", ERROR);
+            break;
+          case '.': {
+            if (it + 1 >= end) goto end;
+            char c2 = *(it + 1);
+            if (c2 & 0x80 || c2 < '0' || c2 > '1') {
+              if (!mode_set) {
+                mode = FLOAT;
+                decimal_places = 1;
+              }
+              step(*++it);
+              goto end;
+            }
+            if (decimal_places) {
+              step(*++it);
+              onerror("identifier cannot start with a number", ERROR);
+              goto end;
+            }
+            decimal_places = 1;
+            mode = FLOAT;
+          } break;
+          case 'i':
+            if (mode_set) goto end;
+            mode = SIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          case 'u':
+            if (mode_set) goto end;
+            mode = UNSIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          case 'f':
+            if (mode_set) goto end;
+            mode = FLOAT;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          default:
+            --it;
+            goto end;
+        }
+        ++it;
+        step(c);
+      }
+      break;
+    #pragma endregion
+    case '.':
+    #pragma region float_parsing
+      mode = FLOAT;
+      decimal_places = 1;
+      ++it;
+      while (it != end) {
+        char c = *it;
+        switch (c) {
+          case '0':
+          case '1':
+          case '2':
+          case '3':
+          case '4':
+          case '5':
+          case '6':
+          case '7':
+          case '8':
+          case '9':
+            if (decimal_places) float_part += (c - '0') * std::pow(0.1, decimal_places++);
+            else {
+              bits += log2_10;
+              int_part = int_part.zext((unsigned)std::ceil(bits));
+              int_part *= 10;
+              int_part += c - '0';
+            }
+            break;
+          case '.': {
+            if (it + 1 >= end) goto end;
+            char c2 = *(it + 1);
+            if (c2 & 0x80 || c2 < '0' || c2 > '9') {
+              if (!mode_set) {
+                mode = FLOAT;
+                decimal_places = 1;
+              }
+              step(*++it);
+              goto end;
+            }
+            if (decimal_places) {
+              step(*++it);
+              onerror("identifier cannot start with a number", ERROR);
+              goto end;
+            }
+            decimal_places = 1;
+            mode = FLOAT;
+          } break;
+          case 'i':
+            if (mode_set) goto end;
+            mode = SIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          case 'u':
+            if (mode_set) goto end;
+            mode = UNSIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          case 'f':
+            if (mode_set) goto end;
+            mode = FLOAT;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          default:
+            --it;
+            goto end;
+        }
+        ++it;
+        step(c);
+      }
+      break;
+    #pragma endregion
+    default:
+    #pragma region oct_parsing
+      while (it != end) {
+        char c = *it;
+        switch (c) {
+          case '0':
+          case '1':
+          case '2':
+          case '3':
+          case '4':
+          case '5':
+          case '6':
+          case '7':
+            if (decimal_places) float_part += (c - '0') * std::pow(0.125, decimal_places++);
+            else {
+              bits += 3;
+              int_part = int_part.zext((unsigned)std::ceil(bits));
+              int_part *= 8;
+              int_part += c - '0';
+            }
+            break;
+          case '8':
+          case '9':
+            onerror("invalid decimal character in octal literal", ERROR);
+            break;
+          case '.': {
+            if (it + 1 >= end) goto end;
+            char c2 = *(it + 1);
+            if (c2 & 0x80 || c2 < '0' || c2 > '9') {
+              if (!mode_set) {
+                mode = FLOAT;
+                decimal_places = 1;
+              }
+              step(*++it);
+              goto end;
+            }
+            if (decimal_places) {
+              step(*++it);
+              onerror("identifier cannot start with a number", ERROR);
+              goto end;
+            }
+            decimal_places = 1;
+            mode = FLOAT;
+          } break;
+          case 'i':
+            if (mode_set) goto end;
+            mode = SIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          case 'u':
+            if (mode_set) goto end;
+            mode = UNSIGNED;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          case 'f':
+            if (mode_set) goto end;
+            mode = FLOAT;
+            mode_set = true;
+            step(*++it);
+            goto end; // TODO: add width spec
+            break;
+          default:
+            --it;
+            goto end;
+        }
+        ++it;
+        step(c);
+      }
+    #pragma endregion
+  }
+  #pragma region dec_parsing
+  else while (it != end) {
     char c = *it;
     switch (c) {
       case '0':
@@ -194,19 +516,22 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
         goto end; // TODO: add width spec
         break;
       default:
+        --it;
         goto end;
     }
     ++it;
     step(c);
   }
+  #pragma endregion
   end:
+  ++it;
   std::string out;
   switch (mode) {
     case SIGNED:
     case UNSIGNED:
       out.resize(int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE + 2);
       out[0] = mode == UNSIGNED ? '0' : '2';
-      out[0] |= negative << 1;
+      out[0] |= negative;
       std::memcpy(out.data() + 1, &nbits, 2);
       std::memcpy(out.data() + 3, int_part.getRawData(), int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE);
       break;

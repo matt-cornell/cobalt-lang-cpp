@@ -3,6 +3,7 @@
 #include <numbers>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/ADT/APInt.h>
+#include <llvm/Support/FileSystem.h>
 #if __cplusplus >= 202002
 #include <bit>
 #define countl1(...) std::countl_one(__VA_ARGS__)
@@ -242,17 +243,104 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
 #define DEF_PP(NAME, ...) {sstring::get(#NAME), [](std::string_view code, bound_handler onerror)->std::string __VA_ARGS__},
 macro_map cobalt::default_macros {
   DEF_PP(file, {
-    (void)code;
-    return "";
+    if (code.empty()) return "";
+    if (llvm::sys::fs::exists(onerror.loc.file)) {
+      auto idx = onerror.loc.file.find_last_of('/');
+      auto fname = idx == std::string::npos ? std::string_view{onerror.loc.file} : onerror.loc.file.substr(0, idx);
+      auto eo = llvm::MemoryBuffer::getFile(fname, false, false);
+      if (eo) {
+        auto str = eo.get()->getBuffer();
+        std::string out = "\"";
+        out.reserve(str.size() + 2);
+        for (char c : str) {
+          if (c == '"') out += "\\\"";
+          else if (c >= 32 && c <= 127) out.push_back(c);
+          else {
+            char buff[] = "\\x00";
+            buff[2] = (unsigned char)c >> 4;
+            buff[3] = c & 15;
+            out += buff;
+          }
+        }
+        out += "\"";
+        return out;
+      }
+      else {
+        auto msg = eo.getError().message();
+        onerror(msg, ERROR);
+        return msg;
+      }
+    }
+    else {
+      constexpr char chars[] = "0123456789abcdef";
+      auto eo = llvm::MemoryBuffer::getFile(code, false, false);
+      if (eo) {
+        auto str = eo.get()->getBuffer();
+        std::string out = "\"";
+        out.reserve(str.size() + 2);
+        for (char c : str) {
+          if (c == '"') out += "\\\"";
+          else if (c >= 32 && c <= 127) out.push_back(c);
+          else {
+            char buff[] = "\\x00";
+            buff[2] = chars[(unsigned char)c >> 4];
+            buff[3] = chars[c & 15];
+            out += buff;
+          }
+        }
+        out += "\"";
+        return out;
+      }
+      else {
+        auto msg = eo.getError().message();
+        onerror(msg, ERROR);
+        return msg;
+      }
+    }
   })
   DEF_PP(import, {
-    (void)code;
-    return "";
+    if (code.empty()) return "";
+    if (llvm::sys::fs::exists(onerror.loc.file)) {
+      auto idx = onerror.loc.file.find_last_of('/');
+      auto fname = idx == std::string::npos ? std::string_view{onerror.loc.file} : onerror.loc.file.substr(0, idx);
+      auto eo = llvm::MemoryBuffer::getFile(fname, false, false);
+      if (eo) return std::string(eo.get()->getBuffer());
+      else {
+        auto msg = eo.getError().message();
+        onerror(msg, ERROR);
+        return "";
+      }
+    }
+    else {
+      auto eo = llvm::MemoryBuffer::getFile(code, false, false);
+      if (eo) return std::string(eo.get()->getBuffer());
+      else {
+        auto msg = eo.getError().message();
+        onerror(msg, ERROR);
+        return "";
+      }
+    }
   })
-  DEF_PP(macro_debug, {
-    llvm::outs() << "macro_debug(" << code << ")\n";
-    return std::string(code);
+  DEF_PP(stringify, {
+    constexpr char chars[] = "0123456789abcdef";
+    std::string out = "\"";
+    out.reserve(code.size() + 2);
+    for (char c : code) {
+      if (c >= 32 && c <= 127) out.push_back(c);
+      else {
+        char buff[] = "\\x00";
+        buff[2] = chars[(unsigned char)c >> 4];
+        buff[3] = chars[c & 15];
+        out += buff;
+      }
+    }
+    out += "\"";
+    return out;
   })
+  DEF_PP(print, {llvm::outs() << code; return "";})
+  DEF_PP(eprint, {llvm::errs() << code; return "";})
+  DEF_PP(println, {llvm::outs() << code << '\n'; return "";})
+  DEF_PP(eprintln, {llvm::errs() << code << '\n'; return "";})
 };
 std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t flags, macro_map macros) {
   auto it = code.begin(), end = code.end();
@@ -522,9 +610,51 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             if (it == end) estate = WS;
             else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
           }
-          if (estate == PAREN) flags.onerror(loc, "function-like macros are not currently supported", WARNING); // TODO: add function-like macros
-          std::string_view macro_id{start, --it};
-          llvm::errs() << int(*it) << macro_id << '\n';
+          std::string_view macro_id, args;
+          if (estate == PAREN) {
+            macro_id = std::string_view{start, it - 1};
+            start = it;
+            std::size_t depth = 1;
+            while (depth && advance(it, end, c)) {
+              switch (c) {
+                case '"': {
+                  bool cont;
+                  while (cont) switch (step(*it++)) {
+                    case '"': cont = false; break;
+                    case '\\': switch (step(*it++)) {
+                      case 'x': for (uint8_t count = 1; count;) if (step(*it++) & 128) --count; break;
+                      case 'u': for (uint8_t count = 3; count;) if (step(*it++) & 128) --count; break;
+                      case 'U': for (uint8_t count = 7; count;) if (step(*it++) & 128) --count; break;
+                    } break;
+                    default:
+                      while (*it & 128) step(*++it);
+                  } break;
+                } break;
+                case '\'':
+                  switch (step(*it++)) {
+                    case '\\':
+                      switch (step(*it++)) {
+                        case 'x':
+                          for (uint8_t count = 1; count;) if (step(*it++) & 128) --count;
+                          break;
+                        case 'u':
+                          for (uint8_t count = 3; count;) if (step(*it++) & 128) --count;
+                          break;
+                        case 'U':
+                          for (uint8_t count = 7; count;) if (step(*it++) & 128) --count;
+                          break;
+                      }
+                    default:
+                      while (step(*it++) != '\'');
+                  }
+                case '(': ++depth; break;
+                case ')': --depth; break;
+              }
+              step(c);
+            }
+            args = std::string_view{start, it - 1};
+          }
+          else macro_id = std::string_view{start, --it};
           if (macro_id == "define") { // @define needs to be specially defined because it adds a macro
             flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
             return out;
@@ -539,7 +669,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             else {
               auto f2 = flags;
               f2.update_location = false;
-              auto toks = tokenize(it->second("", {loc, flags.onerror}), loc, f2, macros);
+              auto toks = tokenize(it->second(args, {loc, flags.onerror}), loc, f2, macros);
               out.insert(out.end(), toks.begin(), toks.end());
             }
           }

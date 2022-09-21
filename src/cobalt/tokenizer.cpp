@@ -240,8 +240,21 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   else ++loc.col;
 #pragma endregion
 #define DEF_PP(NAME, ...) {sstring::get(#NAME), [](std::string_view code, bound_handler onerror)->std::string __VA_ARGS__},
-pp_map cobalt::default_directives;
-std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t flags, pp_map const& directives) {
+macro_map cobalt::default_macros {
+  DEF_PP(file, {
+    (void)code;
+    return "";
+  })
+  DEF_PP(import, {
+    (void)code;
+    return "";
+  })
+  DEF_PP(macro_debug, {
+    llvm::outs() << "macro_debug(" << code << ")\n";
+    return std::string(code);
+  })
+};
+std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t flags, macro_map macros) {
   auto it = code.begin(), end = code.end();
   std::vector<token> out;
   char32_t c;
@@ -462,10 +475,75 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
     }
     else {
       switch (c) {
-        case '@':
-          flags.onerror(loc, "macros are not currently supported", CRITICAL);
-          return out;
-          break;
+        case '@': {
+          flags.onerror(loc, "macros are experimental", WARNING);
+          auto start = it;
+          auto start_l = loc;
+          enum {BAD, WS, PAREN} estate = BAD;
+          while (!estate && advance(it, end, c)) {
+            switch (c) {
+#pragma region whitespace_characters
+              case 0x85:
+              case 0xA0:
+              case 0x1680:
+              case 0x2000:
+              case 0x2001:
+              case 0x2002:
+              case 0x2003:
+              case 0x2004:
+              case 0x2005:
+              case 0x2006:
+              case 0x2007:
+              case 0x2008:
+              case 0x2009:
+              case 0x200A:
+              case 0x2028:
+              case 0x2029:
+              case 0x202F:
+              case 0x205F:
+              case 0x3000:
+                if (flags.warn_whitespace) flags.onerror(loc, "unusual whitespace character U+" + as_hex(c), WARNING);
+              case 0x09:
+              case 0x0A:
+              case 0x0B:
+              case 0x0C:
+              case 0x0D:
+              case 0x20:
+                estate = WS;
+                break;
+              case '(':
+                estate = PAREN;
+                break;
+#pragma endregion
+            }
+            step(c);
+          }
+          if (estate == BAD) {
+            if (it == end) estate = WS;
+            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
+          }
+          if (estate == PAREN) flags.onerror(loc, "function-like macros are not currently supported", WARNING); // TODO: add function-like macros
+          std::string_view macro_id{start, --it};
+          llvm::errs() << int(*it) << macro_id << '\n';
+          if (macro_id == "define") { // @define needs to be specially defined because it adds a macro
+            flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
+            return out;
+          }
+          else {
+            auto it = macros.find(sstring::get(macro_id));
+            if (it == macros.end()) {
+              out.push_back({start_l, "@"});
+              ++start_l.col;
+              out.push_back({start_l, std::string(macro_id)});
+            }
+            else {
+              auto f2 = flags;
+              f2.update_location = false;
+              auto toks = tokenize(it->second("", {loc, flags.onerror}), loc, f2, macros);
+              out.insert(out.end(), toks.begin(), toks.end());
+            }
+          }
+        } break;
         case '\'':
           ADV
           if (flags.update_location) {STEP}

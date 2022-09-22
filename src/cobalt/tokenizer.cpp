@@ -745,11 +745,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             auto it = macros.find(sstring::get(macro_id));
-            if (it == macros.end()) {
-              out.push_back({start_l, "@"});
-              ++start_l.col;
-              out.push_back({start_l, std::string(macro_id)});
-            }
+            if (it == macros.end()) out.push_back({start_l, "@" + std::string(macro_id)});
             else {
               auto f2 = flags;
               f2.update_location = false;

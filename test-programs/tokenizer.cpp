@@ -9,8 +9,9 @@ void pretty_print(cobalt::token const& tok) {
     if (c >= '0' && c <= '9') {
       std::cout.put(c);
       auto it = tok.data.begin();
+      std::cout.put(' ');
       while (++it != tok.data.end()) {
-        std::cout.put('\\').put('x').put(chars[(unsigned char)(*it) >> 4]).put(chars[*it & 15]);
+        std::cout.put(chars[(unsigned char)(*it) >> 4]).put(chars[*it & 15]);
       }
     }
     else std::cout << tok.data;

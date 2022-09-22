@@ -244,7 +244,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
 macro_map cobalt::default_macros {
   DEF_PP(file, {
     if (code.empty()) return "";
-    if (llvm::sys::fs::exists(onerror.loc.file)) {
+    if (code.front() != '/' && llvm::sys::fs::exists(onerror.loc.file)) {
       auto idx = onerror.loc.file.find_last_of('/');
       auto fname = idx == std::string::npos ? std::string_view{onerror.loc.file} : onerror.loc.file.substr(0, idx);
       auto eo = llvm::MemoryBuffer::getFile(fname, false, false);
@@ -300,7 +300,7 @@ macro_map cobalt::default_macros {
   })
   DEF_PP(import, {
     if (code.empty()) return "";
-    if (llvm::sys::fs::exists(onerror.loc.file)) {
+    if (code.front() != '/' && llvm::sys::fs::exists(onerror.loc.file)) {
       auto idx = onerror.loc.file.find_last_of('/');
       auto fname = idx == std::string::npos ? std::string_view{onerror.loc.file} : onerror.loc.file.substr(0, idx);
       auto eo = llvm::MemoryBuffer::getFile(fname, false, false);
@@ -321,7 +321,7 @@ macro_map cobalt::default_macros {
       }
     }
   })
-  DEF_PP(stringify, {
+  DEF_PP(str, {
     constexpr char chars[] = "0123456789abcdef";
     std::string out = "\"";
     out.reserve(code.size() + 2);
@@ -822,7 +822,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           if (topb) {
             --it;
             out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
-            --loc.col;
+            if (flags.update_location) --loc.col;
           }
           else out.back().data.push_back((char)c);
           break;
@@ -927,6 +927,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             if (c2 >= '0' && c2 <= '9') {
               --it;
               out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
+              if (flags.update_location) --loc.col;
             }
             else out.push_back({loc, "."});
             topb = true;

@@ -1044,6 +1044,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             if (c2 >= '0' && c2 <= '9') {
               --it;
               out.push_back({loc, parse_num(it, end, {loc, flags.onerror}, step)});
+              --loc.col;
             }
             else out.push_back({loc, "."});
             topb = true;

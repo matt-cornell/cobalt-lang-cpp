@@ -1,4 +1,5 @@
 #include "cobalt/tokenizer.hpp"
+#include "cobalt/version.hpp"
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/FileSystem.h>
 using namespace cobalt;
@@ -131,6 +132,7 @@ macro_map cobalt::default_macros {
   })
   DEF_PP(region, {(void)code; return "";})
   DEF_PP(endregion, {(void)code; return "";})
+  DEF_PP(version, {(void)code; return COBALT_VERSION;})
   DEF_PP(print, {llvm::outs() << code; return "";})
   DEF_PP(eprint, {llvm::errs() << code; return "";})
   DEF_PP(println, {llvm::outs() << code << '\n'; return "";})

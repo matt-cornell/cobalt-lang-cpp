@@ -337,6 +337,8 @@ macro_map cobalt::default_macros {
     out += "\"";
     return out;
   })
+  DEF_PP(region, {(void)code; return "";})
+  DEF_PP(endregion, {(void)code; return "";})
   DEF_PP(print, {llvm::outs() << code; return "";})
   DEF_PP(eprint, {llvm::errs() << code; return "";})
   DEF_PP(println, {llvm::outs() << code << '\n'; return "";})

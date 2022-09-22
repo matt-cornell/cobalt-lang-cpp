@@ -128,9 +128,6 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   constexpr double log2_10 = std::numbers::ln10_v<double> / std::numbers::ln2_v<double>;
   llvm::APInt int_part;
   double float_part = 0;
-  bool negative = false, mode_set = false;
-  enum {SIGNED, UNSIGNED, FLOAT} mode = SIGNED;
-  uint16_t nbits = 64;
   double bits = 0;
   if (*it == '0') switch (*++it) {
     case 'x':
@@ -190,10 +187,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
             if (it + 1 >= end) goto end;
             char c2 = *(it + 1);
             if (c2 & 0x80 || ((c2 < '0' || c2 > '9') && (c2 < 'a' || c2 > 'f') && (c2 < 'A' || c2 > 'F'))) {
-              if (!mode_set) {
-                mode = FLOAT;
-                decimal_places = 1;
-              }
+              decimal_places = 1;
               step(*++it);
               goto end;
             }
@@ -203,22 +197,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
               goto end;
             }
             decimal_places = 1;
-            mode = FLOAT;
           } break;
-          case 'i':
-            if (mode_set) goto end;
-            mode = SIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
-          case 'u':
-            if (mode_set) goto end;
-            mode = UNSIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
           default:
             --it;
             goto end;
@@ -259,10 +238,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
             if (it + 1 >= end) goto end;
             char c2 = *(it + 1);
             if (c2 & 0x80 || c2 < '0' || c2 > '1') {
-              if (!mode_set) {
-                mode = FLOAT;
-                decimal_places = 1;
-              }
+              decimal_places = 1;
               step(*++it);
               goto end;
             }
@@ -272,29 +248,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
               goto end;
             }
             decimal_places = 1;
-            mode = FLOAT;
           } break;
-          case 'i':
-            if (mode_set) goto end;
-            mode = SIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
-          case 'u':
-            if (mode_set) goto end;
-            mode = UNSIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
-          case 'f':
-            if (mode_set) goto end;
-            mode = FLOAT;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
           default:
             --it;
             goto end;
@@ -306,7 +260,6 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
     #pragma endregion
     case '.':
     #pragma region float_parsing
-      mode = FLOAT;
       decimal_places = 1;
       ++it;
       while (it != end) {
@@ -332,44 +285,10 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
             break;
           case '.': {
             if (it + 1 >= end) goto end;
-            char c2 = *(it + 1);
-            if (c2 & 0x80 || c2 < '0' || c2 > '9') {
-              if (!mode_set) {
-                mode = FLOAT;
-                decimal_places = 1;
-              }
-              step(*++it);
-              goto end;
-            }
-            if (decimal_places) {
-              step(*++it);
-              onerror("identifier cannot start with a number", ERROR);
-              goto end;
-            }
-            decimal_places = 1;
-            mode = FLOAT;
+            step(*++it);
+            onerror("identifier cannot start with a number", ERROR);
+            goto end;
           } break;
-          case 'i':
-            if (mode_set) goto end;
-            mode = SIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
-          case 'u':
-            if (mode_set) goto end;
-            mode = UNSIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
-          case 'f':
-            if (mode_set) goto end;
-            mode = FLOAT;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
           default:
             --it;
             goto end;
@@ -408,10 +327,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
             if (it + 1 >= end) goto end;
             char c2 = *(it + 1);
             if (c2 & 0x80 || c2 < '0' || c2 > '9') {
-              if (!mode_set) {
-                mode = FLOAT;
-                decimal_places = 1;
-              }
+              decimal_places = 1;
               step(*++it);
               goto end;
             }
@@ -421,29 +337,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
               goto end;
             }
             decimal_places = 1;
-            mode = FLOAT;
           } break;
-          case 'i':
-            if (mode_set) goto end;
-            mode = SIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
-          case 'u':
-            if (mode_set) goto end;
-            mode = UNSIGNED;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
-          case 'f':
-            if (mode_set) goto end;
-            mode = FLOAT;
-            mode_set = true;
-            step(*++it);
-            goto end; // TODO: add width spec
-            break;
           default:
             --it;
             goto end;
@@ -479,10 +373,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
         if (it + 1 >= end) goto end;
         char c2 = *(it + 1);
         if (c2 & 0x80 || c2 < '0' || c2 > '9') {
-          if (!mode_set) {
-            mode = FLOAT;
-            decimal_places = 1;
-          }
+          decimal_places = 1;
           step(*++it);
           goto end;
         }
@@ -492,29 +383,7 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
           goto end;
         }
         decimal_places = 1;
-        mode = FLOAT;
       } break;
-      case 'i':
-        if (mode_set) goto end;
-        mode = SIGNED;
-        mode_set = true;
-        step(*++it);
-        goto end; // TODO: add width spec
-        break;
-      case 'u':
-        if (mode_set) goto end;
-        mode = UNSIGNED;
-        mode_set = true;
-        step(*++it);
-        goto end; // TODO: add width spec
-        break;
-      case 'f':
-        if (mode_set) goto end;
-        mode = FLOAT;
-        mode_set = true;
-        step(*++it);
-        goto end; // TODO: add width spec
-        break;
       default:
         --it;
         goto end;
@@ -526,22 +395,16 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   end:
   ++it;
   std::string out;
-  switch (mode) {
-    case SIGNED:
-    case UNSIGNED:
-      out.resize(int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE + 2);
-      out[0] = mode == UNSIGNED ? '0' : '2';
-      out[0] |= negative;
-      std::memcpy(out.data() + 1, &nbits, 2);
-      std::memcpy(out.data() + 3, int_part.getRawData(), int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE);
-      break;
-    case FLOAT:
-      float_part += int_part.trunc(llvm::APInt::APINT_WORD_SIZE).getZExtValue();
-      if (negative) float_part = -float_part;
-      out.resize(sizeof(double) + 2);
-      out[0] = '4';
-      out[1] = char((signed char)nbits);
-      std::memcpy(out.data() + 2, &float_part, sizeof(double));
+  if (decimal_places) {
+    float_part += int_part.trunc(llvm::APInt::APINT_WORD_SIZE).getZExtValue();
+    out.resize(sizeof(double) + 2);
+    out[0] = '1';
+    std::memcpy(out.data() + 2, &float_part, sizeof(double));
+  }
+  else {
+    out.resize(int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE + 2);
+    out[0] = '0';
+    std::memcpy(out.data() + 1, int_part.getRawData(), int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE);
   }
   return out;
 }

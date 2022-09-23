@@ -3,6 +3,7 @@
 #include "cobalt/support/sstring.hpp"
 #include "cobalt/support/location.hpp"
 #include "cobalt/typed_value.hpp"
+#define CO_INIT(ID) ID(std::move(ID))
 namespace cobalt {
   struct compile_context;
   extern compile_context global;

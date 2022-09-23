@@ -7,5 +7,6 @@ namespace cobalt {
     llvm::Value* value;
     types::type_base const* type;
   };
+  inline typed_value nullval {nullptr, nullptr};
 }
 #endif

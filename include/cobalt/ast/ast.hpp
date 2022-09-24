@@ -48,8 +48,9 @@ namespace cobalt {
     sstring file() const noexcept {return ptr->loc.file;}
     std::size_t line() const noexcept {return ptr->loc.line;}
     std::size_t col() const noexcept {return ptr->loc.col;}
-    inline typed_value codegen(compile_context& ctx = global) const {return ptr->codegen(ctx);}
-    inline typed_value operator()(compile_context& ctx = global) const {return ptr->codegen(ctx);}
+    typed_value codegen(compile_context& ctx = global) const {return ptr->codegen(ctx);}
+    typed_value operator()(compile_context& ctx = global) const {return ptr->codegen(ctx);}
+    void print(llvm::raw_ostream& os = llvm::outs()) const {ptr->print(os);}
     bool operator==(AST const& other) const {return ptr->eq(other.ptr);}
     explicit operator bool() const noexcept {return (bool)ptr;}
     ast::ast_base* get() const noexcept {return ptr;}

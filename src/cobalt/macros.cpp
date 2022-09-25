@@ -90,6 +90,7 @@ macro_map cobalt::default_macros {
     out.reserve(code.size() + 2);
     for (char c : code) {
       if (c >= 32 && c <= 127) out.push_back(c);
+      else if (c == '"') out += "\\\"";
       else {
         char buff[] = "\\x00";
         buff[2] = chars[(unsigned char)c >> 4];

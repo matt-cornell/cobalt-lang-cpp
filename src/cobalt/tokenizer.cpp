@@ -1,7 +1,10 @@
 #include "cobalt/tokenizer.hpp"
 #include <cmath>
 #include <numbers>
+#include <optional>
 #include <llvm/ADT/APInt.h>
+#include <backward.hpp>
+backward::SignalHandling sh;
 #if __cplusplus >= 202002
 #include <bit>
 #define countl1(...) std::countl_one(__VA_ARGS__)
@@ -407,6 +410,130 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   }
   return out;
 }
+template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_map& macros, flags_t& flags, location& loc, bool recursing = false) {
+  char32_t c;
+  auto start = it;
+  auto start_l = loc;
+  enum {BAD, WS, PAREN} estate = BAD;
+  auto step = [&loc, u = flags.update_location] (char32_t c) {
+    if (!u) return c;
+    if (is_nl(c)) {
+      ++loc.line;
+      loc.col = 1;
+    }
+    else ++loc.col;
+    return c;
+  };
+  while (!estate && advance(it, end, c)) {
+    switch (c) {
+#pragma region whitespace_characters
+      case 0x85:
+      case 0xA0:
+      case 0x1680:
+      case 0x2000:
+      case 0x2001:
+      case 0x2002:
+      case 0x2003:
+      case 0x2004:
+      case 0x2005:
+      case 0x2006:
+      case 0x2007:
+      case 0x2008:
+      case 0x2009:
+      case 0x200A:
+      case 0x2028:
+      case 0x2029:
+      case 0x202F:
+      case 0x205F:
+      case 0x3000:
+        if (flags.warn_whitespace) flags.onerror(loc, "unusual whitespace character U+" + as_hex(c), WARNING);
+      case 0x09:
+      case 0x0A:
+      case 0x0B:
+      case 0x0C:
+      case 0x0D:
+      case 0x20:
+        estate = WS;
+        break;
+#pragma endregion
+      case '(':
+        estate = PAREN;
+        break;
+    }
+    step(c);
+  }
+  if (estate == BAD) {
+    if (it == end) estate = WS;
+    else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
+  }
+  std::string_view macro_id;
+  std::string args;
+  if (estate == PAREN) {
+    macro_id = std::string_view{start, it - 1};
+    start = it;
+    std::size_t depth = 1;
+    while (depth && advance(it, end, c)) {
+      switch (c) {
+        case '"': {
+          bool cont;
+          while (cont) switch (step(*it++)) {
+            case '"': cont = false; break;
+            case '\\': switch (step(*it++)) {
+              case 'x': for (uint8_t count = 1; count;) if (step(*it++) & 128) --count; break;
+              case 'u': for (uint8_t count = 3; count;) if (step(*it++) & 128) --count; break;
+              case 'U': for (uint8_t count = 7; count;) if (step(*it++) & 128) --count; break;
+            } break;
+            default:
+              while (*it & 128) step(*++it);
+          } break;
+        } break;
+        case '\'':
+          switch (step(*it++)) {
+            case '\\':
+              switch (step(*it++)) {
+                case 'x':
+                  for (uint8_t count = 1; count;) if (step(*it++) & 128) --count;
+                  break;
+                case 'u':
+                  for (uint8_t count = 3; count;) if (step(*it++) & 128) --count;
+                  break;
+                case 'U':
+                  for (uint8_t count = 7; count;) if (step(*it++) & 128) --count;
+                  break;
+              }
+            default:
+              while (step(*it++) != '\'');
+          }
+          break;
+        case '@': {
+          args.append(start, it - 1);
+          auto res = parse_macro(it, end, macros, flags, loc, true);
+          if (res) args += *res;
+          else return std::nullopt;
+          start = it;
+        } break;
+        case '(': ++depth; break;
+        case ')': --depth; break;
+      }
+      step(c);
+    }
+    args.append(start, it - 1);
+  }
+  else {
+    macro_id = std::string_view{start, --it - recursing}; // I don't know why this needs to be here, but it makes macros without arguments work in recursive expansion
+    if (recursing) --it;
+    
+  }
+  if (macro_id == "define") { // @define needs to be specially defined because it adds a macro
+    flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
+    return std::nullopt;
+  }
+  else {
+    auto it = macros.find(sstring::get(macro_id));
+    if (it == macros.end()) return "@" + std::string(macro_id) + "(" + args + ")";
+    else return it->second(args, {loc, flags.onerror});
+  }
+}
 #pragma endregion
 #pragma region macros
 #define ADV \
@@ -649,109 +776,16 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
       switch (c) {
         case '@': {
           flags.onerror(loc, "macros are experimental", WARNING);
-          auto start = it;
-          auto start_l = loc;
-          enum {BAD, WS, PAREN} estate = BAD;
-          while (!estate && advance(it, end, c)) {
-            switch (c) {
-#pragma region whitespace_characters
-              case 0x85:
-              case 0xA0:
-              case 0x1680:
-              case 0x2000:
-              case 0x2001:
-              case 0x2002:
-              case 0x2003:
-              case 0x2004:
-              case 0x2005:
-              case 0x2006:
-              case 0x2007:
-              case 0x2008:
-              case 0x2009:
-              case 0x200A:
-              case 0x2028:
-              case 0x2029:
-              case 0x202F:
-              case 0x205F:
-              case 0x3000:
-                if (flags.warn_whitespace) flags.onerror(loc, "unusual whitespace character U+" + as_hex(c), WARNING);
-              case 0x09:
-              case 0x0A:
-              case 0x0B:
-              case 0x0C:
-              case 0x0D:
-              case 0x20:
-                estate = WS;
-                break;
-              case '(':
-                estate = PAREN;
-                break;
-#pragma endregion
-            }
-            step(c);
-          }
-          if (estate == BAD) {
-            if (it == end) estate = WS;
-            else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
-          }
-          std::string_view macro_id, args;
-          if (estate == PAREN) {
-            macro_id = std::string_view{start, it - 1};
-            start = it;
-            std::size_t depth = 1;
-            while (depth && advance(it, end, c)) {
-              switch (c) {
-                case '"': {
-                  bool cont;
-                  while (cont) switch (step(*it++)) {
-                    case '"': cont = false; break;
-                    case '\\': switch (step(*it++)) {
-                      case 'x': for (uint8_t count = 1; count;) if (step(*it++) & 128) --count; break;
-                      case 'u': for (uint8_t count = 3; count;) if (step(*it++) & 128) --count; break;
-                      case 'U': for (uint8_t count = 7; count;) if (step(*it++) & 128) --count; break;
-                    } break;
-                    default:
-                      while (*it & 128) step(*++it);
-                  } break;
-                } break;
-                case '\'':
-                  switch (step(*it++)) {
-                    case '\\':
-                      switch (step(*it++)) {
-                        case 'x':
-                          for (uint8_t count = 1; count;) if (step(*it++) & 128) --count;
-                          break;
-                        case 'u':
-                          for (uint8_t count = 3; count;) if (step(*it++) & 128) --count;
-                          break;
-                        case 'U':
-                          for (uint8_t count = 7; count;) if (step(*it++) & 128) --count;
-                          break;
-                      }
-                    default:
-                      while (step(*it++) != '\'');
-                  }
-                case '(': ++depth; break;
-                case ')': --depth; break;
-              }
-              step(c);
-            }
-            args = std::string_view{start, it - 1};
-          }
-          else macro_id = std::string_view{start, --it};
-          if (macro_id == "define") { // @define needs to be specially defined because it adds a macro
-            flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
-            return out;
-          }
+          auto start = loc;
+          auto res = parse_macro(it, end, macros, flags, loc);
+          if (!res) return out;
+          if (res->front() == '@') out.push_back({start, *res});
           else {
-            auto it = macros.find(sstring::get(macro_id));
-            if (it == macros.end()) out.push_back({start_l, "@" + std::string(macro_id)});
-            else {
-              auto f2 = flags;
-              f2.update_location = false;
-              auto toks = tokenize(it->second(args, {loc, flags.onerror}), loc, f2, macros);
-              out.insert(out.end(), toks.begin(), toks.end());
-            }
+            bool u = flags.update_location;
+            flags.update_location = false;
+            auto toks = tokenize(*res, start, flags, macros);
+            out.insert(out.end(), toks.begin(), toks.end());
+            flags.update_location = u;
           }
         } break;
         case '\'':

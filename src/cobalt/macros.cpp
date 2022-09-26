@@ -141,4 +141,15 @@ macro_map cobalt::default_macros {
   DEF_PP(eprint, {llvm::errs() << code; return "";})
   DEF_PP(println, {llvm::outs() << code << '\n'; return "";})
   DEF_PP(eprintln, {llvm::errs() << code << '\n'; return "";})
+  DEF_PP(command, {
+    std::string command = code + ">/tmp/copp-command.out"; 
+    std::system(command.c_str());
+    auto eo = llvm::MemoryBuffer::getFile("/tmp/copp-command.out", false, false);
+    if (eo) return std::string(eo.get()->getBuffer());
+    else {
+      auto msg = eo.getError().message();
+      onerror(msg, ERROR);
+      return "";
+    }
+  })
 };

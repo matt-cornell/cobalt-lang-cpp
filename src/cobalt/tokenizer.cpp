@@ -3,8 +3,6 @@
 #include <numbers>
 #include <optional>
 #include <llvm/ADT/APInt.h>
-#include <backward.hpp>
-backward::SignalHandling sh;
 #if __cplusplus >= 202002
 #include <bit>
 #define countl1(...) std::countl_one(__VA_ARGS__)

@@ -451,9 +451,33 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
       case 0x0C:
       case 0x0D:
       case 0x20:
+#pragma endregion
+#pragma region other-breaks
+      case ')':
+      case '+':
+      case '-':
+      case '*':
+      case '/':
+      case '%':
+      case '^':
+      case '&':
+      case '<':
+      case '>':
+      case ',':
+      case ';':
+      case '\'':
+      case '"':
+      case '[':
+      case ']':
+      case '{':
+      case '}':
+      case '~':
+      case '|':
+      case '!':
+      case '\\':
+#pragma endregion
         estate = WS;
         break;
-#pragma endregion
       case '(':
         estate = PAREN;
         break;
@@ -517,11 +541,7 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
     }
     args.append(start, it - 1);
   }
-  else {
-    macro_id = std::string_view{start, --it - recursing}; // I don't know why this needs to be here, but it makes macros without arguments work in recursive expansion
-    if (recursing) --it;
-    
-  }
+  else macro_id = std::string_view{start, --it};
   if (macro_id == "define") { // @define needs to be specially defined because it adds a macro
     flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
     return std::nullopt;
@@ -1052,7 +1072,8 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
     }
     step(c);
   }
-  if (it != end) flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
+  
+  if (it < end) flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
   if (in_string) flags.onerror(loc, "unterminated string literal", ERROR);
   return out;
 }

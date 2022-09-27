@@ -683,22 +683,6 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
     flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
     return std::nullopt;
   }
-  else if (macro_id == "if") {
-    flags.onerror(loc, "control flow macros are not yet supported", CRITICAL);
-    return std::nullopt;
-  }
-  else if (macro_id == "elif") {
-    flags.onerror(loc, "control flow macros are not yet supported", CRITICAL);
-    return std::nullopt;
-  }
-  else if (macro_id == "else") {
-    flags.onerror(loc, "control flow macros are not yet supported", CRITICAL);
-    return std::nullopt;
-  }
-  else if (macro_id == "end") {
-    flags.onerror(loc, "control flow macros are not yet supported", CRITICAL);
-    return std::nullopt;
-  }
   else {
     auto it = macros.find(sstring::get(macro_id));
     if (it == macros.end()) return "@" + std::string(macro_id) + "(" + args + ")";

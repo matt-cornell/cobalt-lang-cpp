@@ -7,6 +7,12 @@ void cobalt::ast::ast_base::print_node(llvm::raw_ostream& os, llvm::Twine prefix
   ast.print_impl(os, prefix + (last ? "    " : "|   "));
 }
 // flow.hpp
+void cobalt::ast::top_level_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, "top level");
+  if (insts.empty()) return;
+  auto last = &insts.back();
+  for (auto const& ast : insts) print_node(os, prefix, ast, &ast == last);
+}
 void cobalt::ast::block_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, "block");
   if (insts.empty()) return;

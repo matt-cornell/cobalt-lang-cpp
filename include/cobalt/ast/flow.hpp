@@ -2,6 +2,14 @@
 #define COBALT_AST_FLOW_HPP
 #include "cobalt/ast/ast.hpp"
 namespace cobalt::ast {
+  struct top_level_ast : ast_base {
+    std::vector<AST> insts;
+    top_level_ast(location loc, std::vector<AST>&& insts) : ast_base(loc), CO_INIT(insts) {}
+    bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<top_level_ast const*>(other)) return insts == ptr->insts; else return false;}
+  private: 
+    typed_value codegen_impl(compile_context& ctx) const override;
+    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
+  };
   struct block_ast : ast_base {
     std::vector<AST> insts;
     block_ast(location loc, std::vector<AST>&& insts) : ast_base(loc), CO_INIT(insts) {}

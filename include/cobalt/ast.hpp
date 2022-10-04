@@ -4,5 +4,6 @@
 #include "cobalt/ast/flow.hpp"
 #include "cobalt/ast/funcs.hpp"
 #include "cobalt/ast/meta.hpp"
+#include "cobalt/ast/scope.hpp"
 #include "cobalt/ast/vars.hpp"
 #endif

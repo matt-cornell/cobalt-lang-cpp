@@ -13,6 +13,9 @@ typed_value cobalt::ast::fndef_ast::codegen_impl(compile_context& ctx) const {(v
 // meta.hpp
 typed_value cobalt::ast::llvm_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::asm_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
+// scope.hpp
+typed_value cobalt::ast::module_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::import_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 // vars.hpp
 typed_value cobalt::ast::vardef_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::mutdef_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}

@@ -76,6 +76,16 @@ void cobalt::ast::asm_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix)
   for (; idx != std::string::npos; start = idx, idx = code.find('\n', idx)) os << prefix << std::string_view{code.data() + start, idx - start};
   os << std::string_view{code.data() + start, code.size() - start} << '\n';
 }
+// scope.hpp
+void cobalt::ast::module_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, llvm::Twine("module ") + name);
+  if (insts.empty()) return;
+  auto last = &insts.back();
+  for (auto const& ast : insts) print_node(os, prefix, ast, &ast == last);
+}
+void cobalt::ast::import_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, llvm::Twine("import: ") + path);
+}
 // vars.hpp
 void cobalt::ast::vardef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, llvm::Twine("vardef: ") + name);

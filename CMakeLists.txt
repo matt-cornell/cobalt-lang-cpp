@@ -15,11 +15,14 @@ add_link_options(${LINK_DIR} ${LLVM_LIB})
 include_directories(include)
 add_library(cobalt
   include/cobalt.hpp
-    include/cobalt/ast.hpp include/cobalt/ast/ast.hpp include/cobalt/ast/meta.hpp include/cobalt/ast/vars.hpp
+    include/cobalt/ast.hpp include/cobalt/ast/ast.hpp include/cobalt/ast/flow.hpp include/cobalt/ast/funcs.hpp include/cobalt/ast/meta.hpp include/cobalt/ast/scope.hpp include/cobalt/ast/vars.hpp
     include/cobalt/support/location.hpp include/cobalt/support/sstring.hpp include/cobalt/support/functions.hpp include/cobalt/support/token.hpp
     include/cobalt/types/types.hpp include/cobalt/types/numeric.hpp include/cobalt/types/pointers.hpp include/cobalt/types/structurals.hpp
     include/cobalt/context.hpp include/cobalt/varmap.hpp include/cobalt/typed_value.hpp
-  src/cobalt/tokenizer.cpp src/cobalt/macros.cpp src/cobalt/parser.cpp)
+  src/cobalt/tokenizer.cpp src/cobalt/macros.cpp src/cobalt/parser.cpp src/cobalt/print-ast.cpp src/cobalt/codegen.cpp)
+if(CMAKE_BUILD_TYPE STREQUAL Debug AND EXISTS "${PROJECT_SOURCE_DIR}/stacktrace.cpp")
+  target_sources(cobalt PUBLIC "${PROJECT_SOURCE_DIR}/stacktrace.cpp")
+endif()
 add_executable(co src/co/main.cpp)
 target_link_libraries(co cobalt)
 
@@ -31,6 +34,9 @@ target_link_libraries(test cobalt)
 # test executables
 add_executable(tokenizer test-programs/tokenizer.cpp)
 target_link_libraries(tokenizer cobalt)
+
+add_executable(parser test-programs/parser.cpp)
+target_link_libraries(parser cobalt)
 
 # build standard library
 include(./cmake/StdLib.cmake)

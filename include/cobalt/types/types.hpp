@@ -18,7 +18,7 @@ namespace cobalt {
       virtual std::size_t align() const = 0;
       virtual llvm::Type* llvm_type(location loc, compile_context& ctx) const = 0;
     };
-    inline type_base::~type_base() {(void);}
+    inline type_base::~type_base() {}
   }
   using type_ptr = types::type_base const*;
 }

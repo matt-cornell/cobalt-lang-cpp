@@ -12,5 +12,6 @@ namespace cobalt {
   inline bool operator==(location const& lhs, location const& rhs) {return lhs.file == rhs.file && lhs.line == rhs.line && lhs.col == rhs.col;}
   inline bool operator!=(location const& lhs, location const& rhs) {return lhs.file != rhs.file || lhs.line != rhs.line || lhs.col != rhs.col;}
   template <class T> inline auto& operator<<(T& os, location const& loc) {return os << loc.file << ':' << loc.line << ':' << loc.col;}
+  inline location nullloc = {sstring::get(""), 0, 0};
 }
 #endif

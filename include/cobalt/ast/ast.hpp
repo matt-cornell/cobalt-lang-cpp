@@ -31,7 +31,7 @@ namespace cobalt {
   class AST {
     friend class ast::ast_base;
     ast::ast_base* ptr;
-    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {ptr->print_impl(os, prefix);}
+    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {if (ptr) ptr->print_impl(os, prefix);}
   public:
     AST(std::nullptr_t) noexcept : ptr(nullptr) {}
     AST(ast::ast_base* ptr) noexcept : ptr(ptr) {}
@@ -39,23 +39,23 @@ namespace cobalt {
     AST(AST&& other) noexcept : ptr(other.ptr) {other.ptr = nullptr;}
     ~AST() noexcept {if (ptr) delete ptr;}
     AST& operator=(AST&& other) noexcept {
-      delete ptr;
+      if (ptr) delete ptr;
       ptr = other.ptr;
       other.ptr = nullptr;
       return *this;
     }
-    location loc() const noexcept {return ptr->loc;}
-    sstring file() const noexcept {return ptr->loc.file;}
-    std::size_t line() const noexcept {return ptr->loc.line;}
-    std::size_t col() const noexcept {return ptr->loc.col;}
-    typed_value codegen(compile_context& ctx = global) const {return ptr->codegen(ctx);}
-    typed_value operator()(compile_context& ctx = global) const {return ptr->codegen(ctx);}
-    void print(llvm::raw_ostream& os = llvm::outs()) const {ptr->print(os);}
-    bool operator==(AST const& other) const {return ptr->eq(other.ptr);}
+    location loc() const noexcept {return ptr ? ptr->loc : nullloc;}
+    sstring file() const noexcept {return ptr ? ptr->loc.file : sstring::get("");}
+    std::size_t line() const noexcept {return ptr ? ptr->loc.line : 0;}
+    std::size_t col() const noexcept {return ptr ? ptr->loc.col : 0;}
+    typed_value codegen(compile_context& ctx = global) const {return ptr ? ptr->codegen(ctx) : nullval;}
+    typed_value operator()(compile_context& ctx = global) const {return ptr ? ptr->codegen(ctx) : nullval;}
+    void print(llvm::raw_ostream& os = llvm::outs()) const {if (ptr) ptr->print(os);}
+    bool operator==(AST const& other) const {return ptr ? (other && ptr->eq(other.ptr)) : !bool(other);}
     explicit operator bool() const noexcept {return (bool)ptr;}
     ast::ast_base* get() const noexcept {return ptr;}
-    template <class T> T* cast() const {return ptr ? static_cast<T*>(ptr) : (T*)ptr;}
-    template <class T> T* dyn_cast() const {return ptr ? dynamic_cast<T*>(ptr) : (T*)ptr;}
+    template <class T> T* cast() const {return ptr ? static_cast<T*>(ptr) : (T*)nullptr;}
+    template <class T> T* dyn_cast() const {return ptr ? dynamic_cast<T*>(ptr) : (T*)nullptr;}
     template <class T, class... As> static AST create(As&&... args) {return new T(std::forward<As>(args)...);}
     template <class T, class... As> static AST create_nothrow(As&&... args) noexcept {
       ast::ast_base* ptr;

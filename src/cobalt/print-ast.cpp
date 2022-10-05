@@ -4,7 +4,7 @@ using namespace cobalt;
 void cobalt::ast::ast_base::print_self(llvm::raw_ostream& os, llvm::Twine name) const {os << name + "\n";}
 void cobalt::ast::ast_base::print_node(llvm::raw_ostream& os, llvm::Twine prefix, AST const& ast, bool last) const {
   os << prefix + (last ? "└── ": "├── ");
-  ast.print_impl(os, prefix + (last ? "    " : "|   "));
+  ast.print_impl(os, prefix + (last ? "    " : "│   "));
 }
 // flow.hpp
 void cobalt::ast::block_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {

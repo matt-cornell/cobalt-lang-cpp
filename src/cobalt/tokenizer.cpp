@@ -793,7 +793,6 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
     else {
       switch (c) {
         case '@': {
-          flags.onerror(loc, "macros are experimental", WARNING);
           auto start = loc;
           auto res = parse_macro(it, end, macros, flags, loc);
           if (!res) return out;
@@ -1072,7 +1071,6 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
     }
     step(c);
   }
-  
   if (it < end) flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
   if (in_string) flags.onerror(loc, "unterminated string literal", ERROR);
   return out;

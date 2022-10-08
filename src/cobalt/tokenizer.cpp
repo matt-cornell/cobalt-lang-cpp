@@ -805,27 +805,28 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             flags.update_location = u;
           }
         } break;
-        case '\'':
+        case '\'': {
+          auto start = loc;
           ADV
           if (flags.update_location) {STEP}
           switch (c) {
             case '\'':
               flags.onerror(loc, "empty character literal", WARNING);
-              out.push_back({loc, {'\'', '\0'}});
+              out.push_back({start, {'\'', '\0'}});
               continue;
             case '\\':
               ADV
               if (flags.update_location) {STEP}
               switch (c) {
-                case '0': out.push_back({loc, {'\'', '\0'}}); break;
-                case 'n': out.push_back({loc, {'\'', '\n'}}); break;
-                case 'a': out.push_back({loc, {'\'', '\a'}}); break;
-                case 'b': out.push_back({loc, {'\'', '\b'}}); break;
-                case 'r': out.push_back({loc, {'\'', '\r'}}); break;
-                case 't': out.push_back({loc, {'\'', '\t'}}); break;
-                case 'v': out.push_back({loc, {'\'', '\v'}}); break;
-                case '\\': out.push_back({loc, {'\'', '\\'}}); break;
-                case '\'': out.push_back({loc, {'\'', '\''}}); break;
+                case '0': out.push_back({start, {'\'', '\0'}}); break;
+                case 'n': out.push_back({start, {'\'', '\n'}}); break;
+                case 'a': out.push_back({start, {'\'', '\a'}}); break;
+                case 'b': out.push_back({start, {'\'', '\b'}}); break;
+                case 'r': out.push_back({start, {'\'', '\r'}}); break;
+                case 't': out.push_back({start, {'\'', '\t'}}); break;
+                case 'v': out.push_back({start, {'\'', '\v'}}); break;
+                case '\\': out.push_back({start, {'\'', '\\'}}); break;
+                case '\'': out.push_back({start, {'\'', '\''}}); break;
                 case 'x': {
                   ADV
                   step(c);
@@ -837,7 +838,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
                   c2 <<= 4;
                   c2 |= c3;
-                  out.push_back({loc, {'\'', (char)c2}});
+                  out.push_back({start, {'\'', (char)c2}});
                 } break;
                 case 'u': {
                   ADV
@@ -864,7 +865,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
                   std::string str(3, '\0');
                   str[0] = '\'';
                   std::memcpy(str.data() + 1, &c2, 2);
-                  out.push_back({loc, std::move(str)});
+                  out.push_back({start, std::move(str)});
                 } break;
                 case 'U': {
                   ADV
@@ -916,7 +917,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
                   std::string str(5, '\0');
                   str[0] = '\'';
                   std::memcpy(str.data() + 1, &c2, 4);
-                  out.push_back({loc, std::move(str)});
+                  out.push_back({start, std::move(str)});
                 } break;
               }
               break;
@@ -924,7 +925,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
               std::string str(5, '\0');
               str[0] = '\'';
               std::memcpy(str.data() + 1, &c, 4);
-              out.push_back({loc, std::move(str)});
+              out.push_back({start, std::move(str)});
             }
           }
           ADV
@@ -936,7 +937,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
               step(c);
             } while (c != '\'');
           }
-          break;
+        } break;
         case '"':
           in_string = true;
           break;

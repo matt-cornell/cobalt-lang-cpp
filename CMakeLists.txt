@@ -28,7 +28,7 @@ target_link_libraries(co cobalt)
 
 # tests
 add_executable(test tests/main.cpp tests/test.hpp
-  tests/tokenizer.hpp)
+  tests/tokenizer.hpp tests/parser.hpp)
 target_link_libraries(test cobalt)
 
 # test executables

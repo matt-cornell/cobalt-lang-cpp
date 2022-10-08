@@ -176,7 +176,7 @@ macro_map cobalt::default_macros {
         count *= 10;
         count += c - '0';
         break;
-      default: 
+      default:
         if (c < 32 || c > 127) {
           constexpr char chars[] = "0123456789abcdef";
           char err[] = "invalid format for @repeat: non-numeric character '\\x00' in count specifier";
@@ -199,12 +199,13 @@ macro_map cobalt::default_macros {
   DEF_PP(major, {(void)code; return STR(COBALT_MAJOR);})
   DEF_PP(minor, {(void)code; return STR(COBALT_MINOR);})
   DEF_PP(patch, {(void)code; return STR(COBALT_PATCH);})
+  DEF_PP(echo, {return std::string(code);})
   DEF_PP(print, {llvm::outs() << code; return "";})
   DEF_PP(eprint, {llvm::errs() << code; return "";})
   DEF_PP(println, {llvm::outs() << code << '\n'; return "";})
   DEF_PP(eprintln, {llvm::errs() << code << '\n'; return "";})
   DEF_PP(command, {
-    std::string command = code + ">/tmp/copp-command.out"; 
+    std::string command = code + ">/tmp/copp-command.out";
     std::system(command.c_str());
     auto eo = llvm::MemoryBuffer::getFile("/tmp/copp-command.out", false, false);
     if (eo) return std::string(eo.get()->getBuffer());

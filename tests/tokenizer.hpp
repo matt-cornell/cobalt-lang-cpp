@@ -1,3 +1,5 @@
+#ifndef COBALT_TESTS_TOKENIZER_HPP
+#define COBALT_TESTS_TOKENIZER_HPP
 #include "cobalt/tokenizer.hpp"
 namespace tests::tokenizer {
   using namespace cobalt;
@@ -54,3 +56,4 @@ Here is a "string")", sstring::get("<test>"), flags);
     return toks == expected;
   }
 }
+#endif

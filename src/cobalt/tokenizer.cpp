@@ -591,9 +591,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '\\':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, "\"\\"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\"\\"});
+              }
+              else out.push_back({loc, "\"\\"});
               topb = false;
             }
             else out.back().data.push_back('\\');
@@ -604,9 +607,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '"':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, "\"\""});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\"\""});
+              }
+              else out.push_back({loc, "\"\""});
               topb = false;
             }
             else out.back().data.push_back('"');
@@ -620,9 +626,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case 'n':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, "\"\n"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\"\n"});
+              }
+              else out.push_back({loc, "\"\n"});
               topb = false;
             }
             else out.back().data.push_back('\n');
@@ -630,9 +639,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"n"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"n"});
+              }
+              else out.push_back({loc, "\"n"});
               topb = false;
             }
             else out.back().data.push_back('n');
@@ -641,9 +653,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case 'r':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, "\"\r"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\"\r"});
+              }
+              else out.push_back({loc, "\"\r"});
               topb = false;
             }
             else out.back().data.push_back('\r');
@@ -651,9 +666,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"r"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"r"});
+              }
+              else out.push_back({loc, "\"r"});
               topb = false;
             }
             else out.back().data.push_back('r');
@@ -662,9 +680,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '0':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, {'"', '\0'}});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, {'"', '\0'}});
+              }
+              else out.push_back({loc, {'"', '\0'}});
               topb = false;
             }
             else out.back().data.push_back('\0');
@@ -672,9 +693,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"0"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"0"});
+              }
+              else out.push_back({loc, "\"0"});
               topb = false;
             }
             else out.back().data.push_back('0');
@@ -683,9 +707,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case 't':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, "\"\t"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\"\t"});
+              }
+              else out.push_back({loc, "\"\t"});
               topb = false;
             }
             else out.back().data.push_back('\t');
@@ -693,9 +720,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"t"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"t"});
+              }
+              else out.push_back({loc, "\"t"});
               topb = false;
             }
             else out.back().data.push_back('t');
@@ -704,9 +734,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case 'v':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, "\"\v"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\"\v"});
+              }
+              else out.push_back({loc, "\"\v"});
               topb = false;
             }
             else out.back().data.push_back('\v');
@@ -714,9 +747,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"v"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"v"});
+              }
+              else out.push_back({loc, "\"v"});
               topb = false;
             }
             else out.back().data.push_back('v');
@@ -725,9 +761,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case 'f':
           if (lwbs) {
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 2;
-              out.push_back({l2, "\"\f"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\"\f"});
+              }
+              else out.push_back({loc, "\"\f"});
               topb = false;
             }
             else out.back().data.push_back('\f');
@@ -735,9 +774,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"f"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"f"});
+              }
+              else out.push_back({loc, "\"f"});
               topb = false;
             }
             else out.back().data.push_back('f');
@@ -756,9 +798,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             c2 <<= 4;
             c2 |= c3;
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 4;
-              out.push_back({l2, {'"', (char)c2}});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, {'"', (char)c2}});
+              }
+              else out.push_back({loc, {'"', (char)c2}});
               topb = false;
             }
             else out.back().data.push_back((char)c2);
@@ -766,9 +811,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"x"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"x"});
+              }
+              else out.push_back({loc, "\"x"});
               topb = false;
             }
             else out.back().data.push_back('x');
@@ -799,9 +847,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             c2 <<= 4;
             c2 |= c3;
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 6;
-              out.push_back({l2, "\""});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\""});
+              }
+              else out.push_back({loc, "\""});
               topb = false;
             }
             append(out.back().data, (char32_t)int32_t(c2));
@@ -809,9 +860,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"u"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"u"});
+              }
+              else out.push_back({loc, "\"u"});
               topb = false;
             }
             else out.back().data.push_back('u');
@@ -866,9 +920,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             c2 <<= 4;
             c2 |= c3;
             if (topb) {
-              auto l2 = loc;
-              l2.col -= 10;
-              out.push_back({l2, "\""});
+              if (flags.update_location) {
+                auto l2 = loc;
+                l2.col -= 2;
+                out.push_back({l2, "\""});
+              }
+              else out.push_back({loc, "\""});
               topb = false;
             }
             append(out.back().data, (char32_t)c2);
@@ -876,9 +933,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           }
           else {
             if (topb) {
-              auto l2 = loc;
-              --l2.col;
-              out.push_back({l2, "\"U"});
+              if (flags.update_location) {
+                auto l2 = loc;
+                --l2.col;
+                out.push_back({l2, "\"U"});
+              }
+              else out.push_back({loc, "\"U"});
               topb = false;
             }
             else out.back().data.push_back('U');
@@ -887,9 +947,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         default:
           lwbs = false;
           if (topb) {
-            auto l2 = loc;
-            --l2.col;
-            out.push_back({l2, "\""});
+            if (flags.update_location) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\""});
+            }
+            else out.push_back({loc, "\""});
             topb = false;
           }
           append(out.back().data, c);

@@ -79,7 +79,7 @@ static std::string as_hex(char32_t c) {
   size = size > 16 ? (size + 3) / 4 : 4;
   std::string outs(size, '0');
   do {
-    outs[size] = c & 0x0F;
+    outs[size] = chars[c & 0x0F];
     c >>= 4;
     --size;
   } while (size);
@@ -91,7 +91,7 @@ template <class T> static std::string as_dec(T c) {
   unsigned char size = std::ceil(std::log10((int32_t)c));
   std::string outs(size, '0');
   while (size) {
-    outs[size] = c % 10;
+    outs[size] = chars[c % 10];
     c /= 10;
     --size;
   }
@@ -590,7 +590,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
       switch (c) {
         case '\\':
           if (lwbs) {
-            if (topb) {out.push_back({loc, "\"\\"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, "\"\\"});
+              topb = false;
+            }
             else out.back().data.push_back('\\');
             lwbs = false;
           }
@@ -598,7 +603,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           break;
         case '"':
           if (lwbs) {
-            if (topb) {out.push_back({loc, "\"\""}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, "\"\""});
+              topb = false;
+            }
             else out.back().data.push_back('"');
             lwbs = false;
           }
@@ -609,67 +619,127 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
           break;
         case 'n':
           if (lwbs) {
-            if (topb) {out.push_back({loc, "\"\n"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, "\"\n"});
+              topb = false;
+            }
             else out.back().data.push_back('\n');
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"n"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"n"});
+              topb = false;
+            }
             else out.back().data.push_back('n');
           }
           break;
         case 'r':
           if (lwbs) {
-            if (topb) {out.push_back({loc, "\"\r"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, "\"\r"});
+              topb = false;
+            }
             else out.back().data.push_back('\r');
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"r"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"r"});
+              topb = false;
+            }
             else out.back().data.push_back('r');
           }
           break;
         case '0':
           if (lwbs) {
-            if (topb) {out.push_back({loc, {'\'', '\0'}}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, {'"', '\0'}});
+              topb = false;
+            }
             else out.back().data.push_back('\0');
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"0"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"0"});
+              topb = false;
+            }
             else out.back().data.push_back('0');
           }
           break;
         case 't':
           if (lwbs) {
-            if (topb) {out.push_back({loc, "\"\t"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, "\"\t"});
+              topb = false;
+            }
             else out.back().data.push_back('\t');
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"t"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"t"});
+              topb = false;
+            }
             else out.back().data.push_back('t');
           }
           break;
         case 'v':
           if (lwbs) {
-            if (topb) {out.push_back({loc, "\"\v"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, "\"\v"});
+              topb = false;
+            }
             else out.back().data.push_back('\v');
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"v"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"v"});
+              topb = false;
+            }
             else out.back().data.push_back('v');
           }
           break;
         case 'f':
           if (lwbs) {
-            if (topb) {out.push_back({loc, "\"\f"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 2;
+              out.push_back({l2, "\"\f"});
+              topb = false;
+            }
             else out.back().data.push_back('\f');
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"f"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"f"});
+              topb = false;
+            }
             else out.back().data.push_back('f');
           }
           break;
@@ -685,12 +755,22 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
             c2 <<= 4;
             c2 |= c3;
-            if (topb) {out.push_back({loc, {'"', (char)c2}}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 4;
+              out.push_back({l2, {'"', (char)c2}});
+              topb = false;
+            }
             else out.back().data.push_back((char)c2);
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"x"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"x"});
+              topb = false;
+            }
             else out.back().data.push_back('x');
           }
           break;
@@ -718,12 +798,22 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
             c2 <<= 4;
             c2 |= c3;
-            if (topb) {out.push_back({loc, "\""}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 6;
+              out.push_back({l2, "\""});
+              topb = false;
+            }
             append(out.back().data, (char32_t)int32_t(c2));
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"u"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"u"});
+              topb = false;
+            }
             else out.back().data.push_back('u');
           }
           break;
@@ -775,18 +865,33 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
             c2 <<= 4;
             c2 |= c3;
-            if (topb) {out.push_back({loc, "\""}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              l2.col -= 10;
+              out.push_back({l2, "\""});
+              topb = false;
+            }
             append(out.back().data, (char32_t)c2);
             lwbs = false;
           }
           else {
-            if (topb) {out.push_back({loc, "\"U"}); topb = false;}
+            if (topb) {
+              auto l2 = loc;
+              --l2.col;
+              out.push_back({l2, "\"U"});
+              topb = false;
+            }
             else out.back().data.push_back('U');
           }
           break;
         default:
           lwbs = false;
-          if (topb) {out.push_back({loc, "\""}); topb = false;}
+          if (topb) {
+            auto l2 = loc;
+            --l2.col;
+            out.push_back({l2, "\""});
+            topb = false;
+          }
           append(out.back().data, c);
       }
     }

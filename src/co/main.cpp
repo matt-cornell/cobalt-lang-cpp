@@ -37,6 +37,30 @@ constexpr char build_help[] = R"(co build [options] [root]
 -O<level>                   optimization level
 -p <preset>                 build preset (debug, release, etc.)
 )";
+constexpr char tokenize_help[] = R"(co tokenize file1, file2...
+-c                          interpret next argument as code to tokenize
+tokens are printed as file:line:col: data, where data will be printed as hex for numeric values
+)";
+constexpr char parse_help[] = R"(co parse file1, file2...
+-c                          interpret next argument as code to parse
+)";
+void pretty_print(cobalt::token const& tok) {
+  constexpr char chars[] = "0123456789abcdef";
+  llvm::outs() << tok.loc << ":\t";
+  if (tok.data.size()) {
+    char c = tok.data.front();
+    if (c >= '0' && c <= '9') {
+      llvm::outs() << c;
+      auto it = tok.data.begin();
+      llvm::outs() << ' ';
+      while (++it != tok.data.end()) {
+        llvm::outs() << chars[(unsigned char)(*it) >> 4] << chars[*it & 15];
+      }
+    }
+    else llvm::outs() << tok.data;
+  }
+  llvm::outs() << '\n';
+}
 template <int code> int cleanup() {llvm::errs().flush(); return code;}
 int main(int argc, char** argv) {
   if (argc == 1) {
@@ -57,6 +81,8 @@ int main(int argc, char** argv) {
         else if (cmd == "aot") {llvm::outs() << aot_help; return cleanup<0>();}
         else if (cmd == "jit") {llvm::outs() << jit_help; return cleanup<0>();}
         else if (cmd == "build") {llvm::outs() << build_help; return cleanup<0>();}
+        else if (cmd == "tokenize") {llvm::outs() << tokenize_help; return cleanup<0>();}
+        else if (cmd == "parse") {llvm::outs() << parse_help; return cleanup<0>();}
         else {llvm::errs() << "unknown subcommand '" << cmd << "'\n"; return cleanup<1>();}
       }
       default:
@@ -68,6 +94,55 @@ co help [category]
     }
   }
   if (cmd == "usage" || cmd == "--usage") {llvm::outs() << usage; return cleanup<0>();}
+  if (cmd == "tokenize") {
+    cobalt::flags_t flags = cobalt::default_flags;
+    cobalt::default_handler_t handler;
+    flags.onerror = handler;
+    bool fail = false;
+    std::string str;
+    for (auto it = argv + 2; it != argv + argc; ++it) {
+      handler = cobalt::default_handler;
+      std::string_view file = *it;
+      std::vector<cobalt::token> toks;
+      if (file == "-c") toks = cobalt::tokenize(*++it, cobalt::sstring::get("<command line>"));
+      else {
+        auto eo = llvm::MemoryBuffer::getFileOrSTDIN(file);
+        if (eo) toks = cobalt::tokenize(eo.get()->getBuffer(), cobalt::sstring::get(file == "-" ? "<stdin>" : file), flags);
+        else {
+          llvm::errs() << eo.getError().message() << '\n';
+          fail = true;
+        }
+      }
+      for (auto const& tok : toks) pretty_print(tok);
+      fail |= handler.errors;
+    }
+    return fail;
+  }
+  if (cmd == "parse") {
+    cobalt::flags_t flags = cobalt::default_flags;
+    cobalt::default_handler_t handler;
+    flags.onerror = handler;
+    bool fail = false;
+    std::string str;
+    for (auto it = argv + 2; it != argv + argc; ++it) {
+      handler = cobalt::default_handler;
+      std::string_view file = *it;
+      std::vector<cobalt::token> toks;
+      if (file == "-c") toks = cobalt::tokenize(*++it, cobalt::sstring::get("<command line>"));
+      else {
+        auto eo = llvm::MemoryBuffer::getFileOrSTDIN(file);
+        if (eo) toks = cobalt::tokenize(eo.get()->getBuffer(), cobalt::sstring::get(file == "-" ? "<stdin>" : file), flags);
+        else {
+          llvm::errs() << eo.getError().message() << '\n';
+          fail = true;
+        }
+      }
+      auto ast = cobalt::parse({toks.begin(), toks.end()}, flags);
+      ast.print(llvm::outs());
+      fail |= handler.errors;
+    }
+    return fail;
+  }
   if (cmd == "build") {
     // TODO: add build command
     return cleanup<0>();

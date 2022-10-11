@@ -4,31 +4,59 @@
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
 // TODO: add help and usage messages
-constexpr char help[] = R"######(co- Cobalt compiler and build tool
-)######";
-constexpr char usage[] = R"######(co build <project directory or file>
-co compile [options] file...
-co jit [options] file
-)######";
+constexpr char help[] = R"(co- Cobalt compiler and build tool
+subcommands:
+co aot: compile file
+co jit: execute file
+co build: build project
+co help: show help
+use co help [subject] for more in-depth instructions
+)";
+constexpr char usage[] = R"(co build <project directory or file>
+co aot [options] <file>
+co jit [options] <file>
+co build [options] [project directory]
+co help [subject]
+)";
+constexpr char aot_help[] = R"(co aot [options] file
+--emit-obj, --emit-object   emit as object file
+--emit-asm, --emit-assembly emit assembly
+--emit-llvm                 emit LLVM IR
+--emit-bc, --emit-bitcode   emit LLVM bitcode
+-o <output file>            select output file
+-O<level>                   optimization level
+-l<lib>                     link library
+)";
+constexpr char jit_help[] = R"(co jit [options] file
+-O<level>                   optimization level
+-l<lib>                     link library
+)";
+constexpr char build_help[] = R"(co build [options] [root]
+[root] can the project file or the path to the directory containing it. It defaults to the current directory, searching upwards if a project file is not found.
+-t <target>                 build target
+-O<level>                   optimization level
+-p <preset>                 build preset (debug, release, etc.)
+)";
 template <int code> int cleanup() {llvm::errs().flush(); return code;}
 int main(int argc, char** argv) {
   if (argc == 1) {
-    llvm::errs() << help;
+    llvm::outs() << help;
     return cleanup<0>();
   }
   std::string_view cmd = argv[1];
   if (cmd == "help" || cmd == "--help" || cmd == "-h") {
     switch (argc) {
       case 2:
-        llvm::errs() << help;
+        llvm::outs() << help;
         return cleanup<0>();
       case 3: {
         cmd = argv[2];
         // TODO: add help messages
-        if (cmd == "help") {llvm::errs() << "placeholder help message\n"; return cleanup<0>();}
-        else if (cmd == "compile") {llvm::errs() << "placeholder help message\n"; return cleanup<0>();}
-        else if (cmd == "build") {llvm::errs() << "placeholder help message\n"; return cleanup<0>();}
-        else if (cmd == "jit") {llvm::errs() << "placeholder help message\n"; return cleanup<0>();}
+        if (cmd == "help") {llvm::outs() << help; return cleanup<0>();}
+        else if (cmd == "usage") {llvm::outs() << usage; return cleanup<0>();}
+        else if (cmd == "aot") {llvm::outs() << aot_help; return cleanup<0>();}
+        else if (cmd == "jit") {llvm::outs() << jit_help; return cleanup<0>();}
+        else if (cmd == "build") {llvm::outs() << build_help; return cleanup<0>();}
         else {llvm::errs() << "unknown subcommand '" << cmd << "'\n"; return cleanup<1>();}
       }
       default:
@@ -39,18 +67,12 @@ co help [category]
         return cleanup<1>();
     }
   }
-  if (cmd == "usage" || cmd == "--usage") {
-    llvm::errs() << usage;
-    return cleanup<0>();
-  }
+  if (cmd == "usage" || cmd == "--usage") {llvm::outs() << usage; return cleanup<0>();}
   if (cmd == "build") {
     // TODO: add build command
     return cleanup<0>();
   }
-  if (cmd == "run") {
-    // TODO: add build command
-  }
-  if (cmd == "compile") {
+  if (cmd == "aot") {
     std::string_view input = "", output = "";
     std::uint8_t opt_lvl = -1;
     std::vector<std::string_view> linked;
@@ -167,7 +189,7 @@ co help [category]
         llvm::WriteBitcodeToFile(*cobalt::global.module, os);
         break;
       default:
-        
+
         break;
     }
     // TODO: AOT compiler
@@ -175,7 +197,7 @@ co help [category]
   }
   if (cmd == "jit") {
     // TODO: JIT compiler
-    
+
     return cleanup<0>();
   }
   llvm::errs() << "unknown command '" << cmd << "'\n";

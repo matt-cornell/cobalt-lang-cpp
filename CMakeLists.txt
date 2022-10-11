@@ -31,13 +31,6 @@ add_executable(test tests/main.cpp tests/test.hpp
   tests/tokenizer.hpp tests/parser.hpp)
 target_link_libraries(test cobalt)
 
-# test executables
-add_executable(tokenizer test-programs/tokenizer.cpp)
-target_link_libraries(tokenizer cobalt)
-
-add_executable(parser test-programs/parser.cpp)
-target_link_libraries(parser cobalt)
-
 # build standard library
 include(./cmake/StdLib.cmake)
 add_stdlib(co-std PREFIX __co_ TARGETS std/c/compat.h std/c/std.h std/c/alloc.cpp std/c/file.cpp LIBS c gcc)

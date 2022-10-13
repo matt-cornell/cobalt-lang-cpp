@@ -112,15 +112,15 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
           AST lhs = nullptr, rhs = nullptr;
           if (ptr == bin_ops.end()) {
             lhs = parse_postfix({code.begin(), it}, flags);
-            rhs = parse_postfix({it + 1, code.end()}, flags);
+            rhs = parse_ltr_infix({it + 1, code.end()}, flags, start);
           }
           else if ((++ptr)->rtl) {
             lhs = parse_rtl_infix({code.begin(), it}, flags, ptr);
-            rhs = parse_rtl_infix({it + 1, code.end()}, flags, ptr);
+            rhs = parse_rtl_infix({it + 1, code.end()}, flags, start);
           }
           else {
             lhs = parse_ltr_infix({code.begin(), it}, flags, ptr);
-            rhs = parse_ltr_infix({it + 1, code.end()}, flags, ptr);
+            rhs = parse_ltr_infix({it + 1, code.end()}, flags, start);
           }
           return AST::create<ast::binop_ast>(it->loc, sstring::get(tok), std::move(lhs), std::move(rhs));
         }
@@ -160,15 +160,15 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
         for (auto op : ops) if (tok == op.op) {
           AST lhs = nullptr, rhs = nullptr;
           if (ptr == bin_ops.end()) {
-            lhs = parse_postfix({code.begin(), it}, flags);
+            lhs = parse_rtl_infix({code.begin(), it}, flags, start);
             rhs = parse_postfix({it + 1, code.end()}, flags);
           }
           else if ((++ptr)->rtl) {
-            lhs = parse_rtl_infix({code.begin(), it}, flags, ptr);
+            lhs = parse_rtl_infix({code.begin(), it}, flags, start);
             rhs = parse_rtl_infix({it + 1, code.end()}, flags, ptr);
           }
           else {
-            lhs = parse_ltr_infix({code.begin(), it}, flags, ptr);
+            lhs = parse_ltr_infix({code.begin(), it}, flags, start);
             rhs = parse_ltr_infix({it + 1, code.end()}, flags, ptr);
           }
           return AST::create<ast::binop_ast>(it->loc, sstring::get(tok), std::move(lhs), std::move(rhs));

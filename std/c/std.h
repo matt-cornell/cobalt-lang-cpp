@@ -25,4 +25,22 @@ IMPORT optional_int8_t CALL __co_fgetc(void* stream);
 IMPORT optional_int8_t CALL __co_fputc(uint8_t ch, void* stream);
 IMPORT int64_t CALL __co_ftell(void* stream);
 IMPORT bool CALL __co_fseek(void* stream, int64_t offset, int8_t origin);
+// miscellaneous utilities
+IMPORT void CALL __co_abort(int code);
+IMPORT void CALL __co_exit(int code);
+IMPORT void CALL __co_quick_exit(int code);
+IMPORT void CALL __co_atexit(void(*handler)());
+IMPORT void CALL __co_at_quick_exit(void(*handler)());
+// string operations
+IMPORT uint64_t CALL __co_strlen(char const* str);
+IMPORT  int64_t CALL __co_strcmp(char const* lhs, char const* rhs);
+IMPORT  int64_t CALL __co_strncmp(char const* lhs, char const* rhs, uint64_t size);
+IMPORT char* CALL __co_strcpy(char* dst, char const* src);
+IMPORT char* CALL __co_strncpy(char* dst, char const* src, uint64_t size);
+IMPORT char* CALL __co_strcat(char* dst, char const* src);
+IMPORT char* CALL __co_strncat(char* dst, char const* src, uint64_t size);
+IMPORT int64_t CALL __co_memcmp(void const* lhs, void const* rhs, uint64_t size);
+IMPORT void* CALL __co_memset(void* data, int c, uint64_t size);
+IMPORT void* CALL __co_memcpy(void* dst, void const* src, uint64_t size);
+IMPORT void* CALL __co_memmove(void* dst, void const* src, uint64_t size);
 #endif

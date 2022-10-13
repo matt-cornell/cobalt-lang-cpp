@@ -13,6 +13,12 @@ void cobalt::ast::top_level_ast::print_impl(llvm::raw_ostream& os, llvm::Twine p
   auto last = &insts.back();
   for (auto const& ast : insts) print_node(os, prefix, ast, &ast == last);
 }
+void cobalt::ast::group_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, "group");
+  if (insts.empty()) return;
+  auto last = &insts.back();
+  for (auto const& ast : insts) print_node(os, prefix, ast, &ast == last);
+}
 void cobalt::ast::block_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, "block");
   if (insts.empty()) return;
@@ -43,6 +49,10 @@ void cobalt::ast::for_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix)
   print_node(os, prefix, body, true);
 }
 // funcs.hpp
+void cobalt::ast::cast_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, llvm::Twine("cast: ") + target->name());
+  print_node(os, prefix, val, true);
+}
 void cobalt::ast::binop_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, llvm::Twine("op: ") + op);
   print_node(os, prefix, lhs, false);
@@ -63,6 +73,11 @@ void cobalt::ast::fndef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefi
   auto last = &args.back();
   for (auto const& type : args) os << (&type == last ? llvm::Twine(type->name()) + "\n" : llvm::Twine(type->name()) + ", ");
 }
+// literals.hpp
+void cobalt::ast::integer_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "int: " << val << ", val: " << suffix << '\n';}
+void cobalt::ast::float_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "float: " << val << ", val: " << suffix << '\n';}
+void cobalt::ast::string_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "string: \"" << val << "\", val: " << suffix << '\n';}
+void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "char: '" << val << "', val: " << suffix << '\n';}
 // meta.hpp
 void cobalt::ast::llvm_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   os << "LLVM";

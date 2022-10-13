@@ -74,19 +74,22 @@ std::pair<type_ptr, span<token>::iterator> parse_type(span<token> code, flags_t 
 AST parse_literals(span<token> code, flags_t flags) {
   (void)code;
   (void)flags;
-  return nullptr;
+  return AST::create<ast::float_ast>(location{sstring::get("<unknown>"), 1, 1}, 0., sstring::get(""));
 }
 AST parse_postfix(span<token> code, flags_t flags) {
-  (void)code;
-  (void)flags;
-  return AST::create<ast::float_ast>(location{sstring::get("<unknown>"), 1, 1}, 0., sstring::get(""));
+  for (auto op : post_ops) if (code.back().data == op) return AST::create<ast::unop_ast>(code.back().loc, sstring::get((llvm::Twine("p") + op).str()), parse_postfix(code.subspan(0, code.size() - 1), flags));
+  return parse_literals(code, flags);  // TODO: switch to different parse_* function
+}
+AST parse_prefix(span<token> code, flags_t flags) {
+  for (auto op : pre_ops) if (code.front().data == op) return AST::create<ast::unop_ast>(code.front().loc, sstring::get(op), parse_prefix(code.subspan(1), flags));
+  return parse_postfix(code, flags);
 }
 AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* start) {
   binary_operator const* ptr = start;
   for (++ptr; ptr != bin_ops.end() && *ptr; ++ptr);
   span<binary_operator const> ops {start, ptr};
   auto it = code.begin(), end = code.end();
-  for (; it != end; ++it) {
+  for (++it; it != end; ++it) {
     auto tok = it->data;
     switch (tok.front()) {
       case '(': {
@@ -111,7 +114,7 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
         for (auto op : ops) if (tok == op.op) {
           AST lhs = nullptr, rhs = nullptr;
           if (ptr == bin_ops.end()) {
-            lhs = parse_postfix({code.begin(), it}, flags);
+            lhs = parse_prefix({code.begin(), it}, flags);
             rhs = parse_ltr_infix({it + 1, code.end()}, flags, start);
           }
           else if ((++ptr)->rtl) {
@@ -126,7 +129,7 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
         }
     }
   }
-  if (ptr == bin_ops.end()) return parse_postfix(code, flags);
+  if (ptr == bin_ops.end()) return parse_prefix(code, flags);
   else if ((++ptr)->rtl) return parse_rtl_infix(code, flags, ptr);
   else return parse_ltr_infix(code, flags, ptr);
 }
@@ -135,7 +138,7 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
   for (++ptr; ptr != bin_ops.end() && *ptr; ++ptr);
   span<binary_operator const> ops {start, ptr};
   auto it = code.end() - 1, end = code.begin() - 1;
-  for (; it != end; --it) {
+  for (--it; it != end; --it) {
     auto tok = it->data;
     switch (tok.front()) {
       case ')': {
@@ -161,7 +164,7 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
           AST lhs = nullptr, rhs = nullptr;
           if (ptr == bin_ops.end()) {
             lhs = parse_rtl_infix({code.begin(), it}, flags, start);
-            rhs = parse_postfix({it + 1, code.end()}, flags);
+            rhs = parse_prefix({it + 1, code.end()}, flags);
           }
           else if ((++ptr)->rtl) {
             lhs = parse_rtl_infix({code.begin(), it}, flags, start);
@@ -175,7 +178,7 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
         }
     }
   }
-  if (ptr == bin_ops.end()) return parse_postfix(code, flags);
+  if (ptr == bin_ops.end()) return parse_prefix(code, flags);
   else if ((++ptr)->rtl) return parse_rtl_infix(code, flags, ptr);
   else return parse_ltr_infix(code, flags, ptr);
 }

@@ -1170,6 +1170,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '/':
         case '%':
         case '!':
+        case '~':
           out.push_back({loc, {char(c)}});
           topb = true;
           break;

@@ -74,10 +74,26 @@ void cobalt::ast::fndef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefi
   for (auto const& type : args) os << (&type == last ? llvm::Twine(type->name()) + "\n" : llvm::Twine(type->name()) + ", ");
 }
 // literals.hpp
-void cobalt::ast::integer_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "int: " << val << ", val: " << suffix << '\n';}
-void cobalt::ast::float_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "float: " << val << ", val: " << suffix << '\n';}
-void cobalt::ast::string_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "string: \"" << val << "\", val: " << suffix << '\n';}
-void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {os << "char: '" << val << "', val: " << suffix << '\n';}
+void cobalt::ast::integer_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  os << "int: " << val;
+  if (!val.empty()) os << ", suffix: " << suffix
+  os << '\n';
+}
+void cobalt::ast::float_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  os << "float: " << val;
+  if (!val.empty()) os << ", suffix: " << suffix
+  os << '\n';
+}
+void cobalt::ast::string_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  os << "int: " << val;
+  if (!val.empty()) os << ", suffix: " << suffix
+  os << '\n';
+}
+void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  os << "int: " << val;
+  if (!val.empty()) os << ", suffix: " << suffix
+  os << '\n';
+}
 // meta.hpp
 void cobalt::ast::llvm_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   os << "LLVM";

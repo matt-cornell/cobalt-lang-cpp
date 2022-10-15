@@ -86,6 +86,30 @@ std::pair<type_ptr, span<token>::iterator> parse_type(span<token> code, flags_t 
         else name.push_back('.');
         lwp = 1;
         break;
+      case '(':
+      case ')':
+      case '[':
+      case ']':
+      case '{':
+      case '}':
+      case ':':
+      case ';':
+      case ',':
+      case '*':
+      case '/':
+      case '%':
+      case '!':
+      case '~':
+      case '+':
+      case '-':
+      case '&':
+      case '|':
+      case '^':
+      case '<':
+      case '>':
+        flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+        goto PT_END;
+        break;
       case '=':
         goto PT_END;
       default:
@@ -103,9 +127,25 @@ std::pair<type_ptr, span<token>::iterator> parse_type(span<token> code, flags_t 
   return {nullptr, it};
 }
 AST parse_literals(span<token> code, flags_t flags) {
-  (void)code;
-  (void)flags;
-  return AST::create<ast::float_ast>(location{sstring::get("<unknown>"), 1, 1}, 0., sstring::get(""));
+  if (code.size() == 1) {
+    std::string_view tok = code.front().data;
+    switch (tok.front()) {
+      case '0': {
+        std::vector<uint64_t> words((tok.size() - 1) / 8); // fix alignment
+        std::memcpy(words.data(), tok.data() + 1, tok.size() - 1);
+        return AST::create<ast::integer_ast>(code.front().loc, llvm::APInt(words.size() * 64, words), sstring::get(""));
+      }
+      case '1':
+        return AST::create<ast::float_ast>(code.front().loc, reinterpret_cast<float const&>(tok[1]), sstring::get(""));
+      case '"':
+        return AST::create<ast::string_ast>(code.front().loc, (llvm::Twine("\"") + tok.substr(1) + "\"").str(), sstring::get(""));
+      default:
+        return AST::create<ast::varget_ast>(code.front().loc, sstring::get(tok));
+    }
+  }
+  std::string str;
+  for (auto const& tok : code) str += tok.data;
+  return AST::create<ast::varget_ast>(code.empty() ? location{sstring::get("<unknown>"), 0, 0} : code.front().loc, sstring::get(std::move(str)));
 }
 AST parse_postfix(span<token> code, flags_t flags) {
   for (auto op : post_ops) if (code.back().data == op) return AST::create<ast::unop_ast>(code.back().loc, sstring::get((llvm::Twine("p") + op).str()), parse_postfix(code.subspan(0, code.size() - 1), flags));
@@ -281,6 +321,29 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
                 else name.push_back('.');
                 lwp = 1;
                 break;
+              case '(':
+              case ')':
+              case '[':
+              case ']':
+              case '{':
+              case '}':
+              case ';':
+              case ',':
+              case '*':
+              case '/':
+              case '%':
+              case '!':
+              case '~':
+              case '+':
+              case '-':
+              case '&':
+              case '|':
+              case '^':
+              case '<':
+              case '>':
+                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in variable name").str(), ERROR);
+                goto MUTDEF_END;
+                break;
               case '=':
               case ':':
                 goto MUTDEF_END;
@@ -352,6 +415,29 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
                 if (lwp == 1) flags.onerror(it->loc, "variable name cannot contain consecutive periods", ERROR);
                 else name.push_back('.');
                 lwp = 1;
+                break;
+              case '(':
+              case ')':
+              case '[':
+              case ']':
+              case '{':
+              case '}':
+              case ';':
+              case ',':
+              case '*':
+              case '/':
+              case '%':
+              case '!':
+              case '~':
+              case '+':
+              case '-':
+              case '&':
+              case '|':
+              case '^':
+              case '<':
+              case '>':
+                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in variable name").str(), ERROR);
+                goto VARDEF_END;
                 break;
               case '=':
               case ':':
@@ -449,6 +535,29 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
                 else module_path.push_back('.');
                 lwp = 1;
                 break;
+                case '(':
+                case ')':
+                case '[':
+                case ']':
+                case '}':
+                case ':':
+                case ',':
+                case '*':
+                case '/':
+                case '%':
+                case '!':
+                case '~':
+                case '+':
+                case '-':
+                case '&':
+                case '|':
+                case '^':
+                case '<':
+                case '>':
+                case '=':
+                  flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in module name").str(), ERROR);
+                  goto MODULE_END;
+                  break;
               default:
                 if (lwp == 0) {
                   flags.onerror(it->loc, "module path cannot contain consecutive identifiers, did you forget a period?", ERROR);
@@ -480,6 +589,29 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
                   if (lwp == 1) flags.onerror(it->loc, "variable name cannot contain consecutive periods", ERROR);
                   else name.push_back('.');
                   lwp = 1;
+                  break;
+                case '(':
+                case ')':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case ';':
+                case ',':
+                case '*':
+                case '/':
+                case '%':
+                case '!':
+                case '~':
+                case '+':
+                case '-':
+                case '&':
+                case '|':
+                case '^':
+                case '<':
+                case '>':
+                  flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in variable name").str(), ERROR);
+                  goto MUTDEF_END;
                   break;
                 case '=':
                 case ':':
@@ -552,6 +684,29 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
                   if (lwp == 1) flags.onerror(it->loc, "variable name cannot contain consecutive periods", ERROR);
                   else name.push_back('.');
                   lwp = 1;
+                  break;
+                case '(':
+                case ')':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case ';':
+                case ',':
+                case '*':
+                case '/':
+                case '%':
+                case '!':
+                case '~':
+                case '+':
+                case '-':
+                case '&':
+                case '|':
+                case '^':
+                case '<':
+                case '>':
+                  flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in variable name").str(), ERROR);
+                  goto VARDEF_END;
                   break;
                 case '=':
                 case ':':

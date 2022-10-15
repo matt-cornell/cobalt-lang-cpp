@@ -50,7 +50,7 @@ void cobalt::ast::for_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix)
 }
 // funcs.hpp
 void cobalt::ast::cast_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  print_self(os, llvm::Twine("cast: ") + target ? target->name() : "<error>");
+  print_self(os, llvm::Twine("cast: ") + target->name());
   print_node(os, prefix, val, true);
 }
 void cobalt::ast::binop_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {

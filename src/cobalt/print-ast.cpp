@@ -76,22 +76,22 @@ void cobalt::ast::fndef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefi
 // literals.hpp
 void cobalt::ast::integer_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   os << "int: " << val;
-  if (!val.empty()) os << ", suffix: " << suffix
+  if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
 void cobalt::ast::float_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   os << "float: " << val;
-  if (!val.empty()) os << ", suffix: " << suffix
+  if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
 void cobalt::ast::string_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   os << "int: " << val;
-  if (!val.empty()) os << ", suffix: " << suffix
+  if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
 void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   os << "int: " << val;
-  if (!val.empty()) os << ", suffix: " << suffix
+  if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
 // meta.hpp

@@ -187,6 +187,7 @@ AST parse_infix(span<token> code, flags_t flags, binary_operator const* ptr = &b
   else return parse_ltr_infix(code, flags, ptr);
 }
 std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, char flag) {
+  code = code.subspan(1);
   auto it = code.begin(), end = code.end();
   std::size_t depth = 1;
   switch (flag) {
@@ -233,7 +234,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
         auto start = it->loc;
         std::string name = "";
         AST val = nullptr;
-        if ((++it)->data != ":") {
+        if (it->data != ":") {
           uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
           while (++it != end) {
             std::string_view tok = it->data;
@@ -249,6 +250,9 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
                 else name.push_back('.');
                 lwp = 1;
                 break;
+              case '=':
+              case ':':
+                goto MUTDEF_END;
               default:
                 if (lwp == 0) {
                   flags.onerror(it->loc, "variable name cannot contain consecutive identifiers, did you forget a period?", ERROR);
@@ -302,7 +306,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
         auto start = it->loc;
         std::string name = "";
         AST val = nullptr;
-        if ((++it)->data != ":") {
+        if (it->data != ":") {
           uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
           while (++it != end) {
             std::string_view tok = it->data;
@@ -318,6 +322,9 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
                 else name.push_back('.');
                 lwp = 1;
                 break;
+              case '=':
+              case ':':
+                goto VARDEF_END;
               default:
                 if (lwp == 0) {
                   flags.onerror(it->loc, "variable name cannot contain consecutive identifiers, did you forget a period?", ERROR);
@@ -427,7 +434,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
           auto start = it->loc;
           std::string name = "";
           AST val = nullptr;
-          if ((++it)->data != ":") {
+          if (it->data != ":") {
             uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
             while (++it != end) {
               std::string_view tok = it->data;
@@ -443,6 +450,9 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
                   else name.push_back('.');
                   lwp = 1;
                   break;
+                case '=':
+                case ':':
+                  goto MUTDEF_END;
                 default:
                   if (lwp == 0) {
                     flags.onerror(it->loc, "variable name cannot contain consecutive identifiers, did you forget a period?", ERROR);
@@ -496,7 +506,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
           auto start = it->loc;
           std::string name = "";
           AST val = nullptr;
-          if ((++it)->data != ":") {
+          if (it->data != ":") {
             uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
             while (++it != end) {
               std::string_view tok = it->data;
@@ -512,6 +522,9 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
                   else name.push_back('.');
                   lwp = 1;
                   break;
+                case '=':
+                case ':':
+                  goto VARDEF_END;
                 default:
                   if (lwp == 0) {
                     flags.onerror(it->loc, "variable name cannot contain consecutive identifiers, did you forget a period?", ERROR);

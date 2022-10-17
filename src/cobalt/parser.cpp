@@ -67,13 +67,18 @@ std::vector<std::string> parse_paths(span<token>::iterator& it, span<token>::ite
   }
   return paths;
 }
-std::pair<type_ptr, span<token>::iterator> parse_type(span<token> code, flags_t flags) {
+std::pair<sstring, span<token>::iterator> parse_type(span<token> code, flags_t flags, std::string_view exit_chars) {
   auto it = code.begin(), end = code.end();
   (void)flags;
   uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
   std::string name;
+  bool graceful = false;
   for (; it != end; ++it) {
     std::string_view tok = it->data;
+    if (exit_chars.find(tok.front()) != std::string::npos) {
+      graceful = true;
+      goto PT_END;
+    }
     switch (tok.front()) {
       case '"': flags.onerror(it->loc, "type name cannot contain a string literal", ERROR); goto PT_END;
       case '\'': flags.onerror(it->loc, "type name cannot contain a character literal", ERROR); goto PT_END;
@@ -107,11 +112,10 @@ std::pair<type_ptr, span<token>::iterator> parse_type(span<token> code, flags_t 
       case '^':
       case '<':
       case '>':
+      case '=':
         flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
         goto PT_END;
         break;
-      case '=':
-        goto PT_END;
       default:
         if (lwp == 0) {
           flags.onerror(it->loc, "type name cannot contain consecutive identifiers, did you forget a period?", ERROR);
@@ -123,8 +127,7 @@ std::pair<type_ptr, span<token>::iterator> parse_type(span<token> code, flags_t 
     }
   }
   PT_END:
-  llvm::outs() << "parsed type, name: " << name << '\n';
-  return {nullptr, it};
+  return {sstring::get(graceful ? name : ""), it};
 }
 AST parse_literals(span<token> code, flags_t flags) {
   if (code.size() == 1) {
@@ -296,6 +299,10 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
   std::string_view tok = it->data;
   switch (tok.front()) {
     case ';': break;
+    case 'c':
+      if (tok == "cr") UNSUPPORTED("coroutine")
+      else goto ST_DEFAULT;
+      break;
     case 'm':
       if (tok == "module") {
         flags.onerror(it->loc, "module definitions are only allowed at the top-level scope", ERROR);
@@ -361,7 +368,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           if (tok == ":") {
             auto start = (it - 1)->loc;
             ++it;
-            auto [t, it2] = parse_type({it, end}, flags);
+            auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
             auto [ast, it3] = parse_expr({it, end}, flags);
             it = it2;
@@ -376,7 +383,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
         else {
           auto start = (it - 1)->loc;
           ++it;
-          auto [t, it2] = parse_type({it, end}, flags);
+          auto [t, it2] = parse_type({it, end}, flags, "=");
           it = it2;
           auto [ast, it3] = parse_expr({it, end}, flags);
           it = it2;
@@ -392,7 +399,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
       else goto ST_DEFAULT;
       break;
     case 'f':
-      if (tok == "func") UNSUPPORTED("function")
+      if (tok == "fn") UNSUPPORTED("function")
       else goto ST_DEFAULT;
       break;
     case 'l':
@@ -456,7 +463,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           if (tok == ":") {
             auto start = (it - 1)->loc;
             ++it;
-            auto [t, it2] = parse_type({it, end}, flags);
+            auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
             auto [ast, it3] = parse_expr({it, end}, flags);
             it = it3;
@@ -471,7 +478,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
         else {
           auto start = (it - 1)->loc;
           ++it;
-          auto [t, it2] = parse_type({it, end}, flags);
+          auto [t, it2] = parse_type({it, end}, flags, "=");
           it = it2;
           auto [ast, it3] = parse_expr({it, end}, flags);
           it = it3;
@@ -505,6 +512,10 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
     std::string_view tok = it->data;
     switch (tok.front()) {
       case ';': break;
+      case 'c':
+        if (tok == "cr") UNSUPPORTED("coroutine")
+        else goto TL_DEFAULT;
+        break;
       case 'm':
         if (tok == "module") {
           auto start = it->loc;
@@ -630,7 +641,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             if (tok == ":") {
               auto start = (it - 1)->loc;
               ++it;
-              auto [t, it2] = parse_type({it, end}, flags);
+              auto [t, it2] = parse_type({it, end}, flags, "=");
               it = it2;
               auto [ast, it3] = parse_expr({it, end}, flags);
               it = it2;
@@ -645,7 +656,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
           else {
             auto start = (it - 1)->loc;
             ++it;
-            auto [t, it2] = parse_type({it, end}, flags);
+            auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
             auto [ast, it3] = parse_expr({it, end}, flags);
             it = it3;
@@ -661,7 +672,146 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
         else goto TL_DEFAULT;
         break;
       case 'f':
-        if (tok == "func") UNSUPPORTED("function")
+        if (tok == "fn") {
+          std::string name;
+          uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
+          bool graceful;
+          auto start = it->loc;
+          while (++it < end) {
+            std::string_view tok = it->data;
+            switch (tok.front()) {
+              case '"': flags.onerror(it->loc, "function name cannot contain a string literal", ERROR); goto FNDEF_END;
+              case '\'': flags.onerror(it->loc, "function name cannot contain a character literal", ERROR); goto FNDEF_END;
+              case '0':
+              case '1':
+                flags.onerror(it->loc, "function name cannot contain a numeric literal", ERROR);
+                goto FNDEF_END;
+              case '.':
+                if (lwp == 1) flags.onerror(it->loc, "function name cannot contain consecutive periods", ERROR);
+                else name.push_back('.');
+                lwp = 1;
+                break;
+              case ')':
+              case '[':
+              case ']':
+              case '{':
+              case '}':
+              case ';':
+              case ',':
+              case '=':
+              case ':':
+                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in function name").str(), ERROR);
+                goto FNDEF_END;
+              case '(':
+                graceful = true;
+                goto FNDEF_END;
+              default:
+                if (lwp == 0) {
+                  flags.onerror(it->loc, "function name cannot contain consecutive identifiers, did you forget a period?", ERROR);
+                  name.push_back('.');
+                }
+                lwp = 0;
+                name += tok;
+                break;
+            }
+          }
+          FNDEF_END:;
+          if (graceful) {
+            std::vector<std::pair<sstring, sstring>> params;
+            graceful = false;
+            while (++it != end) {
+              auto tok = it->data;
+              switch (tok.front()) {
+                case '.':
+                case '(':
+                case '[':
+                case ']':
+                case '{':
+                case '}':
+                case ';':
+                case ',':
+                case '*':
+                case '/':
+                case '%':
+                case '!':
+                case '~':
+                case '+':
+                case '-':
+                case '&':
+                case '|':
+                case '^':
+                case '<':
+                case '>':
+                  flags.onerror(it->loc, (llvm::Twine("invalid parameter name '") + tok + "'").str(), ERROR);
+                  goto PARAMS_END;
+                case ')':
+                  graceful = true;
+                  goto PARAMS_END;
+                case ':': {
+                  auto [type, it2] = parse_type({it + 1, end}, flags, ",)");
+                  it = it2;
+                  params.push_back({sstring::get(name), type});
+                  if (it == end) {
+                    flags.onerror((it - 1)->loc, "unterminated function parameter list", ERROR);
+                    return {std::move(tl_nodes), it};
+                  }
+                  std::string_view next = it->data;
+                  switch (next.front()) {
+                    case ',': break;
+                    case ')': --it; break;
+                    default:
+                      flags.onerror(it->loc, "invalid character after type in parameter, did you forget a comma?", ERROR);
+                      while (it != end && it->data.front() != ',' && it->data.front() != ')') ++it;
+                  }
+                } break;
+                default: {
+                  std::string_view name = it->data;
+                  ++it;
+                  switch (it->data.front()) {
+                    case ':': break;
+                    case '=':
+                      flags.onerror(it->loc, "default parameters are not supported", ERROR);
+                      break;
+                    case '.':
+                      flags.onerror(it->loc, "parameter name cannot be a path", ERROR);
+                      break;
+                    default:
+                      flags.onerror(it->loc, "invalid consecutive identifiers in parameter name", ERROR);
+                  }
+                  auto [type, it2] = parse_type({it + 1, end}, flags, ",)");
+                  it = it2;
+                  params.push_back({sstring::get(name), type});
+                  if (it == end) {
+                    flags.onerror((it - 1)->loc, "unterminated function parameter list", ERROR);
+                    return {std::move(tl_nodes), it};
+                  }
+                  std::string_view next = it->data;
+                  switch (next.front()) {
+                    case ',': break;
+                    case ')': --it; break;
+                    default:
+                      flags.onerror(it->loc, "invalid character after type in parameter, did you forget a comma?", ERROR);
+                      while (it != end && it->data.front() != ',' && it->data.front() != ')') ++it;
+                  }
+                } break;
+              }
+            }
+            PARAMS_END:;
+            auto return_type = sstring::get("<error>");
+            if ((++it)->data.front() != ':') flags.onerror(it->loc, "functions must have an explicit return type", ERROR);
+            else {
+              auto [r, i] = parse_type({it + 1, end}, flags, "=");
+              return_type = r;
+              it = i;
+            }
+            if (it->data != "=") flags.onerror(it->loc, "function must have a body", ERROR);
+            else {
+              auto [ast, i] = parse_expr({it, end}, flags);
+              it = i;
+              tl_nodes.push_back(AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), std::move(ast)));
+            }
+          }
+        }
         else goto TL_DEFAULT;
         break;
       case 'l':
@@ -725,7 +875,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             if (it->data == ":") {
               auto start = (it - 1)->loc;
               ++it;
-              auto [t, it2] = parse_type({it, end}, flags);
+              auto [t, it2] = parse_type({it, end}, flags, "=");
               it = it2;
               auto [ast, it3] = parse_expr({it, end}, flags);
               it = it3;
@@ -740,7 +890,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
           else {
             auto start = (it - 1)->loc;
             ++it;
-            auto [t, it2] = parse_type({it, end}, flags);
+            auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
             auto [ast, it3] = parse_expr({it, end}, flags);
             it = it3;

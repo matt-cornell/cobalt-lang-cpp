@@ -3,7 +3,7 @@ using namespace cobalt;
 // ast.hpp
 void cobalt::ast::ast_base::print_self(llvm::raw_ostream& os, llvm::Twine name) const {os << name + "\n";}
 void cobalt::ast::ast_base::print_node(llvm::raw_ostream& os, llvm::Twine prefix, AST const& ast, bool last) const {
-  os << prefix + (last ? "└── ": "├── ");
+  os << prefix + (last ? "└── " : "├── ");
   ast.print_impl(os, prefix + (last ? "    " : "│   "));
 }
 // flow.hpp
@@ -50,7 +50,7 @@ void cobalt::ast::for_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix)
 }
 // funcs.hpp
 void cobalt::ast::cast_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  print_self(os, llvm::Twine("cast: ") + (target ? target->name() : "<error>"));
+  print_self(os, llvm::Twine("cast: ") + target);
   print_node(os, prefix, val, true);
 }
 void cobalt::ast::binop_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
@@ -63,15 +63,20 @@ void cobalt::ast::unop_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix
   print_node(os, prefix, val, true);
 }
 void cobalt::ast::call_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  print_self(os, llvm::Twine("call: ") + name);
+  print_self(os, "call");
+  print_node(os, prefix, val, args.empty());
   if (args.empty()) return;
   auto last = &args.back();
   for (auto const& ast : args) print_node(os, prefix, ast, &ast == last);
 }
 void cobalt::ast::fndef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  os << llvm::Twine("fndef: ") + name + ", args: ";
-  auto last = &args.back();
-  for (auto const& type : args) os << (&type == last ? llvm::Twine(type->name()) + "\n" : llvm::Twine(type->name()) + ", ");
+  auto sz = args.size();
+  if (sz) {
+    os << llvm::Twine("fndef: ") + name + ", return: " + ret + ", params: \n";
+    for (auto& [param, type] : args) os << prefix << "├── " << param << ": " << type << '\n';
+  }
+  else os << llvm::Twine("fndef: ") + name + ", no params\n";
+  print_node(os, prefix, body, true);
 }
 // literals.hpp
 void cobalt::ast::integer_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {

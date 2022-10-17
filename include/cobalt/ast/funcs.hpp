@@ -22,27 +22,28 @@ namespace cobalt::ast {
     void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
   };
   struct cast_ast : ast_base {
-    type_ptr target;
+    sstring target;
     AST val;
-    cast_ast(location loc, type_ptr target, AST val) : ast_base(loc), target(target), CO_INIT(val) {}
+    cast_ast(location loc, sstring target, AST val) : ast_base(loc), target(target), CO_INIT(val) {}
     bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<cast_ast const*>(other)) return target == ptr->target && val == ptr->val; else return false;}
   private:
     typed_value codegen_impl(compile_context& ctx) const override;
     void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
   };
   struct call_ast : ast_base {
-    sstring name;
+    AST val;
     std::vector<AST> args;
-    call_ast(location loc, sstring name, std::vector<AST>&& args) : ast_base(loc), name(name), CO_INIT(args) {}
-    bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<call_ast const*>(other)) return name == ptr->name && args == ptr->args; else return false;}
+    call_ast(location loc, AST val, std::vector<AST>&& args) : ast_base(loc), CO_INIT(val), CO_INIT(args) {}
+    bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<call_ast const*>(other)) return val == ptr->val && args == ptr->args; else return false;}
   private:
     typed_value codegen_impl(compile_context& ctx) const override;
     void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
   };
   struct fndef_ast : ast_base {
-    sstring name;
-    std::vector<type_ptr> args;
-    fndef_ast(location loc, sstring name, std::vector<type_ptr>&& args) : ast_base(loc), name(name), CO_INIT(args) {}
+    sstring name, ret;
+    std::vector<std::pair<sstring, sstring>> args;
+    AST body;
+    fndef_ast(location loc, sstring name, sstring ret, std::vector<std::pair<sstring, sstring>>&& args, AST&& body) : ast_base(loc), name(name), ret(ret), CO_INIT(args), CO_INIT(body) {}
     bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<fndef_ast const*>(other)) return name == ptr->name && args == ptr->args; else return false;}
   private:
     typed_value codegen_impl(compile_context& ctx) const override;

@@ -404,66 +404,65 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
         auto start = it->loc;
         std::string name = "";
         AST val = nullptr;
-        if (it->data != ":") {
-          uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
-          while (++it != end) {
-            std::string_view tok = it->data;
-            switch (tok.front()) {
-              case '"': flags.onerror(it->loc, "variable name cannot contain a string literal", ERROR); goto MUTDEF_END;
-              case '\'': flags.onerror(it->loc, "variable name cannot contain a character literal", ERROR); goto MUTDEF_END;
-              case '0':
-              case '1':
-                flags.onerror(it->loc, "variable name cannot contain a numeric literal", ERROR);
-                goto MUTDEF_END;
-              case '.':
-                if (lwp == 1) flags.onerror(it->loc, "variable name cannot contain consecutive periods", ERROR);
-                else name.push_back('.');
-                lwp = 1;
-                break;
-              case '(':
-              case ')':
-              case '[':
-              case ']':
-              case '{':
-              case '}':
-              case ';':
-              case ',':
-              case '*':
-              case '/':
-              case '%':
-              case '!':
-              case '~':
-              case '+':
-              case '-':
-              case '&':
-              case '|':
-              case '^':
-              case '<':
-              case '>':
-                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in variable name").str(), ERROR);
-                goto MUTDEF_END;
-                break;
-              case '=':
-              case ':':
-                goto MUTDEF_END;
-              default:
-                if (lwp == 0) {
-                  flags.onerror(it->loc, "variable name cannot contain consecutive identifiers, did you forget a period?", ERROR);
-                  name.push_back('.');
-                }
-                lwp = 0;
-                name += tok;
-                break;
-            }
+        if ((++it)->data != ":") {
+          name = it++->data;
+          bool to_skip = false;
+          switch (name.front()) {
+            case '.': 
+              flags.onerror((it - 1)->loc, "variable paths are not allowed in local variables", ERROR);
+              to_skip = true;
+              break;
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case ';':
+            case ',':
+            case '*':
+            case '/':
+            case '%':
+            case '!':
+            case '~':
+            case '+':
+            case '-':
+            case '&':
+            case '|':
+            case '^':
+            case '<':
+            case '>':
+              flags.onerror((it - 1)->loc, (llvm::Twine("invalid character ") + name + " in variable name").str(), ERROR);
+              to_skip = true;
+              break;
           }
-          MUTDEF_END:;
-          if (tok == ":") {
+          switch (it->data.front()) {
+            case ':': break;
+            case '.': 
+              to_skip = true;
+              flags.onerror(it->loc, "variable paths are not allowed in local variables", ERROR);
+              break;
+            case '=': 
+              if (it->data.size() != 1) {
+                to_skip = true;
+                flags.onerror(it->loc, "unexpected identifier in local variable definition", ERROR);
+              }
+            break;
+            default:
+              to_skip = true;
+              flags.onerror(it->loc, "unexpected identifier in local variable definition", ERROR);
+          }
+          if (to_skip) {
+            name = "";
+            while (it != end && it->data.front() != ':' && it->data != "=") ++it;
+          }
+          if (it->data.front() == ':') {
             auto start = (it - 1)->loc;
             ++it;
             auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
             auto [ast, it3] = parse_expr({it + 1, end}, flags);
-            it = it2;
+            it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
           else {
@@ -478,7 +477,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           auto [t, it2] = parse_type({it, end}, flags, "=");
           it = it2;
           auto [ast, it3] = parse_expr({it + 1, end}, flags);
-          it = it2;
+          it = it3;
           val = AST::create<ast::cast_ast>(start, t, std::move(ast));
         }
         return {AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val)), it};
@@ -491,32 +490,64 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
       else goto ST_DEFAULT;
       break;
     case 'f':
-      if (tok == "fn") UNSUPPORTED("function")
-      else goto ST_DEFAULT;
-      break;
-    case 'l':
-      if (tok == "let") {
+      if (tok == "fn") {
         auto start = it->loc;
-        std::string name = "";
-        AST val = nullptr;
-        if (it->data != ":") {
-          uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
+        std::string name = (++it)->data;
+        bool to_skip = false;
+        switch (name.front()) {
+          case '.': 
+            flags.onerror(start, "variable paths are not allowed in local function", ERROR);
+            to_skip = true;
+            break;
+          case '(':
+            flags.onerror(start, "anonymous functions will be ignored", WARNING);
+            --it;
+            break;
+          case ')':
+          case '[':
+          case ']':
+          case '{':
+          case '}':
+          case ';':
+          case ',':
+          case '*':
+          case '/':
+          case '%':
+          case '!':
+          case '~':
+          case '+':
+          case '-':
+          case '&':
+          case '|':
+          case '^':
+          case '<':
+          case '>':
+            flags.onerror(start, (llvm::Twine("invalid character ") + name + " in function name").str(), ERROR);
+            to_skip = true;
+            break;
+        }
+        switch ((++it)->data.front()) {
+          case '(': break;
+          case '.':
+            to_skip = true;
+            flags.onerror(it->loc, "variable paths are not allowed in local function", ERROR);
+          default:
+            to_skip = true;
+            flags.onerror(it->loc, "unexpected identifier in local function definition", ERROR);
+        }
+        if (to_skip) {
+          name = "";
+          while (it != end && it->data.front() != '(') ++it;
+        }
+        bool graceful = true;
+        if (graceful) {
+          std::vector<std::pair<sstring, sstring>> params;
+          graceful = false;
           while (++it != end) {
-            std::string_view tok = it->data;
+            auto tok = it->data;
             switch (tok.front()) {
-              case '"': flags.onerror(it->loc, "variable name cannot contain a string literal", ERROR); goto VARDEF_END;
-              case '\'': flags.onerror(it->loc, "variable name cannot contain a character literal", ERROR); goto VARDEF_END;
-              case '0':
-              case '1':
-                flags.onerror(it->loc, "variable name cannot contain a numeric literal", ERROR);
-                goto VARDEF_END;
               case '.':
-                if (lwp == 1) flags.onerror(it->loc, "variable name cannot contain consecutive periods", ERROR);
-                else name.push_back('.');
-                lwp = 1;
-                break;
               case '(':
-              case ')':
               case '[':
               case ']':
               case '{':
@@ -535,24 +566,139 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
               case '^':
               case '<':
               case '>':
-                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in variable name").str(), ERROR);
-                goto VARDEF_END;
-                break;
-              case '=':
-              case ':':
-                goto VARDEF_END;
-              default:
-                if (lwp == 0) {
-                  flags.onerror(it->loc, "variable name cannot contain consecutive identifiers, did you forget a period?", ERROR);
-                  name.push_back('.');
+                flags.onerror(it->loc, (llvm::Twine("invalid parameter name '") + tok + "'").str(), ERROR);
+                goto PARAMS_END;
+              case ')':
+                graceful = true;
+                goto PARAMS_END;
+              case ':': {
+                auto [type, it2] = parse_type({it + 1, end}, flags, ",)");
+                it = it2;
+                params.push_back({sstring::get(name), type});
+                if (it == end) {
+                  flags.onerror((it - 1)->loc, "unterminated function parameter list", ERROR);
+                  return {AST(nullptr), it};
                 }
-                lwp = 0;
-                name += tok;
-                break;
+                std::string_view next = it->data;
+                switch (next.front()) {
+                  case ',': break;
+                  case ')': --it; break;
+                  default:
+                    flags.onerror(it->loc, "invalid character after type in parameter, did you forget a comma?", ERROR);
+                    while (it != end && it->data.front() != ',' && it->data.front() != ')') ++it;
+                }
+              } break;
+              default: {
+                std::string_view name = it->data;
+                ++it;
+                switch (it->data.front()) {
+                  case ':': break;
+                  case '=':
+                    flags.onerror(it->loc, "default parameters are not supported", ERROR);
+                    break;
+                  case '.':
+                    flags.onerror(it->loc, "parameter name cannot be a path", ERROR);
+                    break;
+                  default:
+                    flags.onerror(it->loc, "invalid consecutive identifiers in parameter name", ERROR);
+                }
+                auto [type, it2] = parse_type({it + 1, end}, flags, ",)");
+                it = it2;
+                params.push_back({sstring::get(name), type});
+                if (it == end) {
+                  flags.onerror((it - 1)->loc, "unterminated function parameter list", ERROR);
+                  return {AST(nullptr), it};
+                }
+                std::string_view next = it->data;
+                switch (next.front()) {
+                  case ',': break;
+                  case ')': --it; break;
+                  default:
+                    flags.onerror(it->loc, "invalid character after type in parameter, did you forget a comma?", ERROR);
+                    while (it != end && it->data.front() != ',' && it->data.front() != ')') ++it;
+                }
+              } break;
             }
           }
-          VARDEF_END:;
-          if (tok == ":") {
+          PARAMS_END:;
+          auto return_type = sstring::get("<error>");
+          if ((++it)->data.front() != ':') flags.onerror(it->loc, "functions must have an explicit return type", ERROR);
+          else {
+            auto [r, i] = parse_type({it + 1, end}, flags, "=");
+            return_type = r;
+            it = i;
+          }
+          if (it->data != "=") {
+            flags.onerror(it->loc, "function must have a body", ERROR);
+            return {AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), AST(nullptr)), it};
+          }
+          else {
+            auto [ast, i] = parse_expr({it + 1, end}, flags);
+            it = i;
+            return {AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), std::move(ast)), it};
+          }
+        }
+      }
+      else goto ST_DEFAULT;
+      break;
+    case 'l':
+      if (tok == "let") {
+        auto start = it->loc;
+        std::string name = "";
+        AST val = nullptr;
+        if ((++it)->data != ":") {
+          name = it++->data;
+          bool to_skip = false;
+          switch (name.front()) {
+            case '.': 
+              flags.onerror((it - 1)->loc, "variable paths are not allowed in local variables", ERROR);
+              to_skip = true;
+              break;
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case ';':
+            case ',':
+            case '*':
+            case '/':
+            case '%':
+            case '!':
+            case '~':
+            case '+':
+            case '-':
+            case '&':
+            case '|':
+            case '^':
+            case '<':
+            case '>':
+              flags.onerror((it - 1)->loc, (llvm::Twine("invalid character ") + name + " in variable name").str(), ERROR);
+              to_skip = true;
+              break;
+          }
+          switch (it->data.front()) {
+            case ':': break;
+            case '.': 
+              to_skip = true;
+              flags.onerror(it->loc, "variable paths are not allowed in local variables", ERROR);
+              break;
+            case '=': 
+              if (it->data.size() != 1) {
+                to_skip = true;
+                flags.onerror(it->loc, "unexpected identifier in local variable definition", ERROR);
+              }
+            break;
+            default:
+              to_skip = true;
+              flags.onerror(it->loc, "unexpected identifier in local variable definition", ERROR);
+          }
+          if (to_skip) {
+            name = "";
+            while (it != end && it->data.front() != ':' && it->data != "=") ++it;
+          }
+          if (it->data.front() == ':') {
             auto start = (it - 1)->loc;
             ++it;
             auto [t, it2] = parse_type({it, end}, flags, "=");
@@ -585,7 +731,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
         location start = it->loc;
         std::vector<AST> paths;
         for (auto& path : parse_paths(it, code.end(), flags)) paths.push_back(AST::create<ast::import_ast>(start, std::move(path)));
-        return {AST::create<ast::group_ast>(start, std::move(paths)), it};
+        return {paths.size() == 1 ? std::move(paths.front()) : AST::create<ast::group_ast>(start, std::move(paths)), it};
       }
       else goto ST_DEFAULT;
       break;
@@ -808,6 +954,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             }
           }
           FNDEF_END:;
+          if (name.empty()) flags.onerror(start, "anonymous functions will be ignored", WARNING);
           if (graceful) {
             std::vector<std::pair<sstring, sstring>> params;
             graceful = false;

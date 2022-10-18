@@ -26,7 +26,7 @@ std::array<binary_operator, 42> bin_ops = {
 std::array<std::string_view, 8> pre_ops = {"+", "-", "&", "*", "!", "~", "++", "--"};
 std::array<std::string_view, 2> post_ops = {"?", "!"};
 std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t flags);
-std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, char flag = ';');
+std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, std::string_view exit_chars = ";");
 AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* start);
 std::vector<std::string> parse_paths(span<token>::iterator& it, span<token>::iterator end, flags_t flags) {
   std::vector<std::string> paths = {""};
@@ -150,19 +150,93 @@ AST parse_literals(span<token> code, flags_t flags) {
   for (auto const& tok : code) str += tok.data;
   return AST::create<ast::varget_ast>(code.empty() ? location{sstring::get("<unknown>"), 0, 0} : code.front().loc, sstring::get(std::move(str)));
 }
+AST parse_groups(span<token> code, flags_t flags) {
+  if (code.empty()) return nullptr;
+  switch (code.front().data.front()) {
+    case '(': {
+      if (code.back().data.front() != ')') flags.onerror(code.front().loc, "unmatched opening parententhesis", ERROR);
+      std::size_t depth = 1;
+      auto it = code.begin(), end = code.end();
+      std::vector<AST> nodes;
+      ++it;
+      while (it != end && depth) {
+        auto [a, i] = parse_expr({it, end}, flags, ";)");
+        nodes.push_back(std::move(a));
+        it = i;
+        if (it != end) switch (it->data.front()) {
+          case '(': ++depth; break;
+          case ')': --depth; break;
+          case ';': break;
+          default: flags.onerror(it->loc, "missing semicolon in paranthetical grouping", ERROR);
+        }
+      }
+      if (it == end && depth) flags.onerror((it - 1)->loc, "parenthetical grouping missing closing parenthesis", ERROR);
+      switch (nodes.size()) {
+        case 0: flags.onerror(it == end ? (it - 1)->loc : it->loc, "empty parenthetical groupings are not allowed", ERROR); return AST(nullptr);
+        case 1: return std::move(nodes.front());
+        default: return AST::create<ast::group_ast>(it == end ? (it - 1)->loc : it->loc, std::move(nodes));
+      }
+    } break;
+    case '{': {
+      if (code.back().data.front() != '}') flags.onerror(code.front().loc, "unmatched opening brace", ERROR);
+      auto it = code.begin(), end = code.end();
+      std::vector<AST> nodes;
+      ++it;
+      while (it != end) {
+        auto [a, i] = parse_statement({it, end}, flags);
+        nodes.push_back(std::move(a));
+        it = i;
+        if (it != end) switch (it->data.front()) {
+          case ';':
+          case '}': break;
+          default: flags.onerror(it->loc, "missing semicolon in brace grouping", ERROR);
+        }
+        ++it;
+      }
+      return AST::create<ast::block_ast>(it == end ? (it - 1)->loc : it->loc, std::move(nodes));
+    } break;
+    default:
+      return parse_literals(code, flags);
+  }
+}
 AST parse_postfix(span<token> code, flags_t flags) {
+  if (code.empty()) return AST(nullptr);
   for (auto op : post_ops) if (code.back().data == op) return AST::create<ast::unop_ast>(code.back().loc, sstring::get((llvm::Twine("p") + op).str()), parse_postfix(code.subspan(0, code.size() - 1), flags));
-  return parse_literals(code, flags);  // TODO: switch to different parse_* function
+  return parse_groups(code, flags);
 }
 AST parse_prefix(span<token> code, flags_t flags) {
+  if (code.empty()) return AST(nullptr);
   for (auto op : pre_ops) if (code.front().data == op) return AST::create<ast::unop_ast>(code.front().loc, sstring::get(op), parse_prefix(code.subspan(1), flags));
   return parse_postfix(code, flags);
 }
 AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* start) {
+  if (code.empty()) return AST(nullptr);
   binary_operator const* ptr = start;
   for (++ptr; ptr != bin_ops.end() && *ptr; ++ptr);
   span<binary_operator const> ops {start, ptr};
   auto it = code.begin(), end = code.end();
+  switch (it->data.front()) {
+    case '(': {
+      std::size_t depth = 1;
+      while (++it != end && depth) {
+        switch (it->data.front()) {
+          case '(': ++depth; break;
+          case ')': --depth; break;
+        }
+      }
+      --it;
+    } break;
+    case '{': {
+      std::size_t depth = 1;
+      while (++it != end && depth) {
+        switch (it->data.front()) {
+          case '{': ++depth; break;
+          case '}': --depth; break;
+        }
+      }
+      --it;
+    } break;
+  }
   for (++it; it != end; ++it) {
     auto tok = it->data;
     switch (tok.front()) {
@@ -174,6 +248,7 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
             case ')': --depth; break;
           }
         }
+        --it;
       } break;
       case '{': {
         std::size_t depth = 1;
@@ -183,6 +258,7 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
             case '}': --depth; break;
           }
         }
+        --it;
       } break;
       default:
         for (auto op : ops) if (tok == op.op) {
@@ -208,10 +284,33 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
   else return parse_ltr_infix(code, flags, ptr);
 }
 AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* start) {
+  if (code.empty()) return AST(nullptr);
   binary_operator const* ptr = start;
   for (++ptr; ptr != bin_ops.end() && *ptr; ++ptr);
   span<binary_operator const> ops {start, ptr};
   auto it = code.end() - 1, end = code.begin() - 1;
+  switch (it->data.front()) {
+    case ')': {
+      std::size_t depth = 1;
+      while (--it != end && depth) {
+        switch (it->data.front()) {
+          case '(': --depth; break;
+          case ')': ++depth; break;
+        }
+      }
+      ++it;
+    } break;
+    case '}': {
+      std::size_t depth = 1;
+      while (--it != end && depth) {
+        switch (it->data.front()) {
+          case '{': --depth; break;
+          case '}': ++depth; break;
+        }
+      }
+      ++it;
+    } break;
+  }
   for (--it; it != end; --it) {
     auto tok = it->data;
     switch (tok.front()) {
@@ -223,6 +322,7 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
             case ')': ++depth; break;
           }
         }
+        ++it;
       } break;
       case '}': {
         std::size_t depth = 1;
@@ -232,6 +332,7 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
             case '}': ++depth; break;
           }
         }
+        ++it;
       } break;
       default:
         for (auto op : ops) if (tok == op.op) {
@@ -260,37 +361,28 @@ AST parse_infix(span<token> code, flags_t flags, binary_operator const* ptr = &b
   if (ptr->rtl) return parse_rtl_infix(code, flags, ptr);
   else return parse_ltr_infix(code, flags, ptr);
 }
-std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, char flag) {
-  code = code.subspan(1);
+std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, std::string_view exit_chars) {
   auto it = code.begin(), end = code.end();
-  std::size_t depth = 1;
-  switch (flag) {
-    case '{': while (it != end && depth) {
-      std::string_view tok = it->data;
-      switch (tok.front()) {
-        case '{': ++depth;
-        case '}': --depth;
-      }
-    } break;
-    case '[': while (it != end && depth) {
-      std::string_view tok = it->data;
-      switch (tok.front()) {
-        case '[': ++depth;
-        case ']': --depth;
-      }
-    } break;
-    case '(': while (it != end && depth) {
-      std::string_view tok = it->data;
-      switch (tok.front()) {
-        case '(': ++depth;
-        case ')': --depth;
-      }
-    } break;
-    default:
-      while (it != end && it->data.front() != flag) ++it;
-      return {parse_infix({code.begin(), it}, flags, &bin_ops[2]), it};
+  std::size_t paren = 0, brack = 0, brace = 0;
+  auto nc = [exit_chars](char c) {return exit_chars.find(c) == std::string::npos;};
+  bool incr_last = true;
+  for (char c : exit_chars) switch (c) {
+    case ')':
+    case ']':
+    case '}':
+      incr_last = false;
+      goto PE_END;
   }
-  return {parse_infix({code.begin(), it}, flags), it};
+  PE_END:
+  for (; it != end && (paren || brack || brace || nc(it->data.front())); ++it) switch (it->data.front()) {
+    case '(': ++paren; break;
+    case ')': --paren; break;
+    case '[': ++brack; break;
+    case ']': --brack; break;
+    case '{': ++brace; break;
+    case '}': --brace; break;
+  }
+  return {parse_infix({code.begin(), it}, flags, &bin_ops[2]), it};
 }
 std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t flags) {
 #define UNSUPPORTED(TYPE) {flags.onerror(it->loc, TYPE " definitions are not currently supported", CRITICAL);}
@@ -370,12 +462,12 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
             ++it;
             auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
-            auto [ast, it3] = parse_expr({it, end}, flags);
+            auto [ast, it3] = parse_expr({it + 1, end}, flags);
             it = it2;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
           else {
-            auto [ast, it2] = parse_expr({it, end}, flags);
+            auto [ast, it2] = parse_expr({it + 1, end}, flags);
             val = std::move(ast);
             it = it2;
           }
@@ -385,7 +477,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           ++it;
           auto [t, it2] = parse_type({it, end}, flags, "=");
           it = it2;
-          auto [ast, it3] = parse_expr({it, end}, flags);
+          auto [ast, it3] = parse_expr({it + 1, end}, flags);
           it = it2;
           val = AST::create<ast::cast_ast>(start, t, std::move(ast));
         }
@@ -465,12 +557,12 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
             ++it;
             auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
-            auto [ast, it3] = parse_expr({it, end}, flags);
+            auto [ast, it3] = parse_expr({it + 1, end}, flags);
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
           else {
-            auto [ast, it2] = parse_expr({it, end}, flags);
+            auto [ast, it2] = parse_expr({it + 1, end}, flags);
             val = std::move(ast);
             it = it2;
           }
@@ -480,7 +572,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           ++it;
           auto [t, it2] = parse_type({it, end}, flags, "=");
           it = it2;
-          auto [ast, it3] = parse_expr({it, end}, flags);
+          auto [ast, it3] = parse_expr({it + 1, end}, flags);
           it = it3;
           val = AST::create<ast::cast_ast>(start, t, std::move(ast));
         }
@@ -498,7 +590,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
       else goto ST_DEFAULT;
       break;
     default: ST_DEFAULT:
-      return parse_expr({it, end}, flags);
+      return parse_expr({it, end}, flags, ";}");
   }
   return {AST(nullptr), it};
 }
@@ -643,12 +735,12 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
               ++it;
               auto [t, it2] = parse_type({it, end}, flags, "=");
               it = it2;
-              auto [ast, it3] = parse_expr({it, end}, flags);
+              auto [ast, it3] = parse_expr({it + 1, end}, flags);
               it = it2;
               val = AST::create<ast::cast_ast>(start, t, std::move(ast));
             }
             else {
-              auto [ast, it2] = parse_expr({it, end}, flags);
+              auto [ast, it2] = parse_expr({it + 1, end}, flags);
               val = std::move(ast);
               it = it2;
             }
@@ -658,7 +750,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             ++it;
             auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
-            auto [ast, it3] = parse_expr({it, end}, flags);
+            auto [ast, it3] = parse_expr({it + 1, end}, flags);
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
@@ -806,7 +898,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             }
             if (it->data != "=") flags.onerror(it->loc, "function must have a body", ERROR);
             else {
-              auto [ast, i] = parse_expr({it, end}, flags);
+              auto [ast, i] = parse_expr({it + 1, end}, flags);
               it = i;
               tl_nodes.push_back(AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), std::move(ast)));
             }
@@ -877,12 +969,12 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
               ++it;
               auto [t, it2] = parse_type({it, end}, flags, "=");
               it = it2;
-              auto [ast, it3] = parse_expr({it, end}, flags);
+              auto [ast, it3] = parse_expr({it + 1, end}, flags);
               it = it3;
               val = AST::create<ast::cast_ast>(start, t, std::move(ast));
             }
             else {
-              auto [ast, it2] = parse_expr({it, end}, flags);
+              auto [ast, it2] = parse_expr({it + 1, end}, flags);
               val = std::move(ast);
               it = it2;
             }
@@ -892,7 +984,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             ++it;
             auto [t, it2] = parse_type({it, end}, flags, "=");
             it = it2;
-            auto [ast, it3] = parse_expr({it, end}, flags);
+            auto [ast, it3] = parse_expr({it + 1, end}, flags);
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }

@@ -993,11 +993,24 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             it = it2 + count + 1;
             it2 = comment.begin();
             while (advance(it2, comment.end(), c)) step(c);
-            if (flags.update_location) --loc.col;
+            while (it2 != comment.end()) {
+              flags.onerror(loc, "invalid UTF-8 codepoint in comment", WARNING);
+              step(c);
+              while (advance(it2, comment.end(), c)) step(c);
+            }
+            if (flags.update_location) {
+              if (is_nl(c)) --loc.line;
+              else --loc.col;
+            }
           }
           else {
             if (flags.update_location) ++loc.col;
             while (advance(it, end, c) && !is_nl(c)) if (flags.update_location) ++loc.col;
+            while (it != end && !is_nl(c)) {
+              flags.onerror(loc, "invalid UTF-8 codepoint in comment", WARNING);
+              while (advance(it, end, c) && !is_nl(c)) if (flags.update_location) ++loc.col;
+              ++loc.col;
+            }
           }
           break;
         case '\'': {

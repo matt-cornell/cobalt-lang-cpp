@@ -18,9 +18,6 @@ typed_value cobalt::ast::integer_ast::codegen_impl(compile_context& ctx) const {
 typed_value cobalt::ast::float_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::string_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::char_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
-// meta.hpp
-typed_value cobalt::ast::llvm_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
-typed_value cobalt::ast::asm_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 // scope.hpp
 typed_value cobalt::ast::module_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::import_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}

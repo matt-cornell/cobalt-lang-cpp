@@ -99,19 +99,6 @@ void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix
   if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
-// meta.hpp
-void cobalt::ast::llvm_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  os << "LLVM";
-  std::size_t start = 0, idx = code.find('\n');
-  for (; idx != std::string::npos; start = idx, idx = code.find('\n', idx)) os << prefix << std::string_view{code.data() + start, idx - start};
-  os << std::string_view{code.data() + start, code.size() - start} << '\n';
-}
-void cobalt::ast::asm_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  os << "asm";
-  std::size_t start = 0, idx = code.find('\n');
-  for (; idx != std::string::npos; start = idx, idx = code.find('\n', idx)) os << prefix << std::string_view{code.data() + start, idx - start};
-  os << std::string_view{code.data() + start, code.size() - start} << '\n';
-}
 // scope.hpp
 void cobalt::ast::module_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, llvm::Twine("module ") + name);

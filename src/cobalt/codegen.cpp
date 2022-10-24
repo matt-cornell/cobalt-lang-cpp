@@ -1,8 +1,14 @@
 #include "cobalt/ast.hpp"
 using namespace cobalt;
 // flow.hpp
-typed_value cobalt::ast::top_level_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
-typed_value cobalt::ast::group_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::top_level_ast::codegen_impl(compile_context& ctx) const {
+  for (auto const& ast : insts) ast(ctx);
+  return nullval;
+}
+typed_value cobalt::ast::group_ast::codegen_impl(compile_context& ctx) const {
+  for (auto const& ast : insts) ast(ctx);
+  return nullval;
+}
 typed_value cobalt::ast::block_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::if_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::while_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}

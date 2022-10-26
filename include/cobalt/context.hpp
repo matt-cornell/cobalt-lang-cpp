@@ -3,6 +3,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
+#include "cobalt/flags.hpp"
 namespace cobalt {
   struct varmap;
   struct compile_context {
@@ -10,8 +11,9 @@ namespace cobalt {
     std::unique_ptr<llvm::Module> module;
     llvm::IRBuilder<> builder;
     varmap* vars;
-    explicit compile_context(std::string const& name) : context(std::make_unique<llvm::LLVMContext>()), module(std::make_unique<llvm::Module>(name, *context)), builder(*context) {}
+    flags_t flags;
+    explicit compile_context(std::string const& name, flags_t flags = default_flags) : context(std::make_unique<llvm::LLVMContext>()), module(std::make_unique<llvm::Module>(name, *context)), builder(*context), flags(flags) {}
   };
-  compile_context global{"<anonymous>"};
+  inline compile_context global{"<anonymous>"};
 }
 #endif

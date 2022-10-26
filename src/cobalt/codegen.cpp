@@ -1,4 +1,6 @@
 #include "cobalt/ast.hpp"
+#include "cobalt/context.hpp"
+#include "cobalt/varmap.hpp"
 using namespace cobalt;
 // flow.hpp
 typed_value cobalt::ast::top_level_ast::codegen_impl(compile_context& ctx) const {
@@ -34,19 +36,28 @@ typed_value cobalt::ast::vardef_ast::codegen_impl(compile_context& ctx) const {
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
     auto local = name.substr(old + 1, idx - old - 1);
-    auto it = vm->symbols.find(sstring::get(local));
+    auto ss = sstring::get(local);
+    auto it = vm->symbols.find(ss);
     old = idx;
     idx = name.find('.', old);
-    if (idx == std::string::npos) {if (ptr) flags.onerror(loc, (llvm::Twine("redefinition of ") + name).str(), ERROR);}
+    if (idx == std::string::npos) {
+      if (it != vm->symbols.end()) ctx.flags.onerror(loc, "redefinition of " + name, ERROR);
+      else break;
+    }
     else {
       if (it == vm->symbols.end()) {
-        ptr = new varmap{vm};
-        vm->insert(sstring::get(local), ptr);
+        if (it->second.index() == 3) vm = std::get<3>(it->second).get();
+        else {
+          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+          return nullval;
+        }
       }
       else {
-        auto idx = ptr->index();
-        if (idx == 3) vm = ptr->get<3>();
-        else flags.onerror(loc, (llvm::Twine(name.substr(idx)) + " is not a module").str(), ERROR);
+        if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
+        else {
+          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+          return nullval;
+        }
       }
     }
   }
@@ -61,19 +72,28 @@ typed_value cobalt::ast::mutdef_ast::codegen_impl(compile_context& ctx) const {
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
     auto local = name.substr(old + 1, idx - old - 1);
-    auto ptr = vm->get(local);
+    auto ss = sstring::get(local);
+    auto it = vm->symbols.find(ss);
     old = idx;
     idx = name.find('.', old);
-    if (idx == std::string::npos) {if (ptr) flags.onerror(loc, (llvm::Twine("redefinition of ") + name).str(), ERROR);}
+    if (idx == std::string::npos) {
+      if (it != vm->symbols.end()) ctx.flags.onerror(loc, "redefinition of " + name, ERROR);
+      else break;
+    }
     else {
-      if (ptr) {
-        auto idx = ptr->index();
-        if (idx == 3) vm = ptr->get<3>();
-        else flags.onerror(loc, (llvm::Twine(name.substr(idx)) + " is not a module").str(), ERROR);
+      if (it == vm->symbols.end()) {
+        if (it->second.index() == 3) vm = std::get<3>(it->second).get();
+        else {
+          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+          return nullval;
+        }
       }
       else {
-        ptr = new varmap{vm};
-        vm->insert(sstring::get(local), ptr);
+        if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
+        else {
+          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+          return nullval;
+        }
       }
     }
   }
@@ -81,7 +101,7 @@ typed_value cobalt::ast::mutdef_ast::codegen_impl(compile_context& ctx) const {
   auto tv = val(ctx);
   auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx));
   ctx.builder.CreateStore(a, tv.value);
-  vm->insert(sstring::get(local), variable{a, true});
+  vm->insert(sstring::get(local), variable{{a, tv.type}, true}); // TODO: return reference
   return tv;
 }
 typed_value cobalt::ast::varget_ast::codegen_impl(compile_context& ctx) const {
@@ -90,23 +110,26 @@ typed_value cobalt::ast::varget_ast::codegen_impl(compile_context& ctx) const {
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
     auto local = name.substr(old + 1, idx - old - 1);
-    auto ptr = vm->get(local);
+    auto ptr = vm->get(sstring::get(local));
     old = idx;
     idx = name.find('.', old);
     if (ptr) {
       auto idx = ptr->index();
       if (idx == std::string::npos) {
-        if (idx == 0) return ptr->get<0>();
-        else flags.onerror(loc, (llvm::Twine(name.substr(old)) + " is not a variable").str(), ERROR);
+        if (idx == 0) {
+          auto val = std::get<0>(*ptr);
+          return val.is_mut ? typed_value{ctx.builder.CreateLoad(val.var.type->llvm_type(loc, ctx), val.var.value), val.var.type} : val.var;
+        }
+        else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
       }
       else {
-        if (idx == 3) vm = ptr->get<3>();
-        else flags.onerror(loc, (llvm::Twine(name.substr(idx)) + " is not a module").str(), ERROR);
+        if (idx == 3) vm = std::get<3>(*ptr).get();
+        else ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
       }
     }
     else {
-      ptr = new varmap{vm};
-      vm->insert(sstring::get(local), ptr);
+      ctx.flags.onerror(loc, name.substr(0, old) + " is not", ERROR);
+      return nullval;
     }
   }
   return nullval;

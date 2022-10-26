@@ -8,14 +8,16 @@ execute_process(OUTPUT_VARIABLE LLVM_FLAGS COMMAND llvm-config --cppflags --ldfl
 string(STRIP "${LLVM_FLAGS}" LLVM_FLAGS)
 string(REPLACE "\n" ";" LLVM_FLAGS "${LLVM_FLAGS}")
 list(POP_FRONT LLVM_FLAGS CPP_FLAGS LINK_DIR LLVM_LIB)
-
+string(REPLACE " " ";" CPP_FLAGS "${CPP_FLAGS}")
+string(REPLACE " " ";" LINK_DIR "${LINK_DIR}")
+string(REPLACE " " ";" LLVM_LIB "${LLVM_LIB}")
 add_compile_options(${CPP_FLAGS})
 add_link_options(${LINK_DIR} ${LLVM_LIB})
 
 include_directories(include)
 add_library(cobalt
   include/cobalt.hpp
-    include/cobalt/ast.hpp include/cobalt/ast/ast.hpp include/cobalt/ast/flow.hpp include/cobalt/ast/funcs.hpp include/cobalt/ast/literals.hpp include/cobalt/ast/meta.hpp include/cobalt/ast/scope.hpp include/cobalt/ast/vars.hpp
+    include/cobalt/ast.hpp include/cobalt/ast/ast.hpp include/cobalt/ast/flow.hpp include/cobalt/ast/funcs.hpp include/cobalt/ast/literals.hpp include/cobalt/ast/scope.hpp include/cobalt/ast/vars.hpp
     include/cobalt/support/location.hpp include/cobalt/support/sstring.hpp include/cobalt/support/functions.hpp include/cobalt/support/token.hpp
     include/cobalt/types/types.hpp include/cobalt/types/numeric.hpp include/cobalt/types/pointers.hpp include/cobalt/types/structurals.hpp
     include/cobalt/context.hpp include/cobalt/varmap.hpp include/cobalt/typed_value.hpp

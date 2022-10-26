@@ -8,7 +8,9 @@ execute_process(OUTPUT_VARIABLE LLVM_FLAGS COMMAND llvm-config --cppflags --ldfl
 string(STRIP "${LLVM_FLAGS}" LLVM_FLAGS)
 string(REPLACE "\n" ";" LLVM_FLAGS "${LLVM_FLAGS}")
 list(POP_FRONT LLVM_FLAGS CPP_FLAGS LINK_DIR LLVM_LIB)
-
+string(REPLACE " " ";" CPP_FLAGS "${CPP_FLAGS}")
+string(REPLACE " " ";" LINK_DIR "${LINK_DIR}")
+string(REPLACE " " ";" LLVM_LIB "${LLVM_LIB}")
 add_compile_options(${CPP_FLAGS})
 add_link_options(${LINK_DIR} ${LLVM_LIB})
 

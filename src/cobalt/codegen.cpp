@@ -11,6 +11,7 @@ typed_value cobalt::ast::for_ast::codegen_impl(compile_context& ctx) const {(voi
 typed_value cobalt::ast::cast_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::binop_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::unop_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::subscr_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::call_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::fndef_ast::codegen_impl(compile_context& ctx) const {(void)ctx; return nullval;}
 // literals.hpp

@@ -21,7 +21,7 @@ template <class T, class U> static T bit_cast(U const& val) {return reinterpret_
 using namespace std::literals;
 using namespace cobalt;
 #pragma region misc-functions
-template <class I> static bool advance(I& it, I& end, char32_t& c) noexcept(noexcept(*it++)) {
+template <class I> static bool advance(I& it, I end, char32_t& c) noexcept(noexcept(*it++)) {
   if (it == end) return false;
   switch (countl1((unsigned char)*it)) {
     case 0: c = char32_t(*it++); return true; break;
@@ -973,6 +973,46 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
             flags.update_location = u;
           }
         } break;
+        case '#':
+          if (*it == '=') { // multiline comment
+            if (flags.update_location) ++loc.col;
+            std::size_t count = 1;
+            while (*++it == '=') {
+              ++loc.col;
+              ++count;
+            }
+            std::string str(count + 1, '=');
+            str.back() = '#';
+            auto idx = code.find(str, it - code.begin());
+            if (idx == std::string::npos) {
+              flags.onerror(loc, "unterminated multiline comment", ERROR);
+              return out;
+            }
+            auto it2 = code.begin() + idx;
+            std::string_view comment(it, it2);
+            it = it2 + count + 1;
+            it2 = comment.begin();
+            while (advance(it2, comment.end(), c)) step(c);
+            while (it2 != comment.end()) {
+              flags.onerror(loc, "invalid UTF-8 codepoint in comment", WARNING);
+              step(c);
+              while (advance(it2, comment.end(), c)) step(c);
+            }
+            if (flags.update_location) {
+              if (is_nl(c)) --loc.line;
+              else --loc.col;
+            }
+          }
+          else {
+            if (flags.update_location) ++loc.col;
+            while (advance(it, end, c) && !is_nl(c)) if (flags.update_location) ++loc.col;
+            while (it != end && !is_nl(c)) {
+              flags.onerror(loc, "invalid UTF-8 codepoint in comment", WARNING);
+              while (advance(it, end, c) && !is_nl(c)) if (flags.update_location) ++loc.col;
+              ++loc.col;
+            }
+          }
+          break;
         case '\'': {
           auto start = loc;
           ADV

@@ -157,7 +157,14 @@ co help [category]
       std::string_view cmd = *it;
       if (cmd.front() == '-') {
         cmd.remove_prefix(1);
-        switch (cmd.front()) {
+        if (cmd.empty()) {
+          if (!input.empty()) {
+            llvm::errs() << "redefinition of input file\n";
+            return cleanup<1>();
+          }
+          input = "-";
+        }
+        else switch (cmd.front()) {
           case '-':
             cmd.remove_prefix(1);
             if (cmd.substr(0, 5) == "emit-") {
@@ -186,9 +193,6 @@ co help [category]
               return cleanup<1>();
             }
             break;
-          case 'l':
-            linked.push_back(cmd.substr(1));
-            break;
           case 'O':
             if (cmd.size() > 2) {
               llvm::errs() << "optimization level should be a single-digit number\n";
@@ -203,8 +207,15 @@ co help [category]
             break;
           default:
             for (char c : cmd) switch (c) {
-              case 'l': llvm::errs() << "-l flag must not be specified with any other flags\n"; return cleanup<1>();
               case 'O': llvm::errs() << "-O flag must not be specified with any other flags\n"; return cleanup<1>();
+              case 'l':
+                ++it;
+                if (it == argv + argc) {
+                  llvm::errs() << "unspecified linked library\n";
+                  return cleanup<1>();
+                }
+                linked.push_back(*it);
+                break;
               case 'o':
                 if (!output.empty()) {
                   llvm::errs() << "redefinition of output file\n";
@@ -215,6 +226,7 @@ co help [category]
                   llvm::errs() << "unspecified output file\n";
                   return cleanup<1>();
                 }
+                output = *it;
                 break;
             }
         }
@@ -228,8 +240,9 @@ co help [category]
       }
     }
     auto f = llvm::MemoryBuffer::getFileOrSTDIN(input, true, false);
+    if (input == "-") input = "<stdin>";
     if (!f) {
-      llvm::errs() << f.getError().message();
+      llvm::errs() << input << ": " << f.getError().message() << '\n';
       return cleanup<1>();
     }
     std::string_view code{f.get()->getBuffer().data(), f.get()->getBufferSize()};
@@ -246,9 +259,10 @@ co help [category]
         critical = &cobalt::werror_handler.critical;
         break;
     }
-    auto toks = cobalt::tokenize(code, cobalt::sstring::get(input == "-" ? "<stdin>" : input), flags);
+    auto toks = cobalt::tokenize(code, cobalt::sstring::get(input), flags);
     if (*critical) return cleanup<2>();
     cobalt::AST ast = cobalt::parse({toks.begin(), toks.end()}, flags);
+    cobalt::compile_context ctx{std::string(input)};
     ast(cobalt::global);
     std::error_code ec;
     llvm::raw_fd_ostream os({output}, ec);

@@ -140,6 +140,8 @@ AST parse_literals(span<token> code, flags_t flags) {
       }
       case '1':
         return AST::create<ast::float_ast>(code.front().loc, reinterpret_cast<float const&>(tok[1]), sstring::get(""));
+      case '\'':
+        return AST::create<ast::char_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       case '"':
         return AST::create<ast::string_ast>(code.front().loc, (llvm::Twine("\"") + tok.substr(1) + "\"").str(), sstring::get(""));
       default:

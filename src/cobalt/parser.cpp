@@ -143,7 +143,7 @@ AST parse_literals(span<token> code, flags_t flags) {
       case '\'':
         return AST::create<ast::char_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       case '"':
-        return AST::create<ast::string_ast>(code.front().loc, (llvm::Twine("\"") + tok.substr(1) + "\"").str(), sstring::get(""));
+        return AST::create<ast::string_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       default:
         return AST::create<ast::varget_ast>(code.front().loc, sstring::get(tok));
     }

@@ -97,12 +97,12 @@ void cobalt::ast::float_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefi
   os << '\n';
 }
 void cobalt::ast::string_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  os << "int: " << val;
+  os << "string: " << val;
   if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
 void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  os << "int: " << val;
+  os << "char: " << val;
   if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }

@@ -3,7 +3,6 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
-// TODO: add help and usage messages
 constexpr char help[] = R"(co- Cobalt compiler and build tool
 subcommands:
 co aot: compile file
@@ -44,9 +43,12 @@ tokens are printed as file:line:col: data, where data will be printed as hex for
 constexpr char parse_help[] = R"(co parse file1, file2...
 -c                          interpret next argument as code to parse
 )";
-void pretty_print(llvm::raw_ostream& os, cobalt::token const& tok) {
+std::size_t len(cobalt::token const& tok) {return tok.loc.file.size() + long(std::log10(tok.loc.line) + 1) + long(std::log10(tok.loc.col) + 1);}
+void pretty_print(llvm::raw_ostream& os, std::size_t sz, cobalt::token const& tok) {
   constexpr char chars[] = "0123456789abcdef";
-  os << tok.loc << ":\t";
+  std::size_t sz2 = len(tok);
+  os << tok.loc << ": ";
+  for (std::size_t i = sz2; i < sz; ++i) os << ' ';
   if (tok.data.size()) {
     char c = tok.data.front();
     if (c >= '0' && c <= '9') {
@@ -75,7 +77,6 @@ int main(int argc, char** argv) {
         return cleanup<0>();
       case 3: {
         cmd = argv[2];
-        // TODO: add help messages
         if (cmd == "help") {llvm::outs() << help; return cleanup<0>();}
         else if (cmd == "usage") {llvm::outs() << usage; return cleanup<0>();}
         else if (cmd == "aot") {llvm::outs() << aot_help; return cleanup<0>();}
@@ -113,7 +114,9 @@ co help [category]
           fail = true;
         }
       }
-      for (auto const& tok : toks) pretty_print(llvm::outs(), tok);
+      std::size_t sz = 0;
+      for (auto const& tok : toks) sz = std::max(sz, len(tok));
+      for (auto const& tok : toks) pretty_print(llvm::outs(), sz, tok);
       fail |= handler.errors;
     }
     return fail;
@@ -233,13 +236,15 @@ co help [category]
     ll_warn = h.warnings;
     ll_err  = h.errors;
     ll_crit = h.critical;
+    std::size_t sz = 0;
+    for (auto const& tok : toks) sz = std::max(sz, len(tok));
     if (markdown) {
       if (source.empty()) os << "# Original\nThis is the original source from the command line:\n```\n";
       else if (source == "-") os << "# Original\nThis is the original source from the standard input:\n```\n";
       else os << "# Original\nThis is the original source from `" << source << "`:\n```\n";
       os << code;
       os << "\n```\n# Tokens\nThese are the generated tokens:\n```\n";
-      for (auto const& tok : toks) pretty_print(os, tok);
+      for (auto const& tok : toks) pretty_print(os, sz, tok);
       os << "```\nThere were " << tok_warn << " warnings and " << tok_err << " errors.";
       if (tok_crit) os << "\nThere was at least one critical error.\n";
       else os << "\nThere were no critical errors.\n";
@@ -260,7 +265,7 @@ co help [category]
       else os << "Original\nThis is the original source from `" << source << "`:\n\n";
       os << code;
       os << "\n\nTokens\nThese are the generated tokens:\n\n";
-      for (auto const& tok : toks) pretty_print(os, tok);
+      for (auto const& tok : toks) pretty_print(os, sz, tok);
       os << "\nThere were " << tok_warn << " warnings and " << tok_err << " errors.";
       if (tok_crit) os << "\nThere was at least one critical error.\n";
       else os << "\nThere were no critical errors.\n";

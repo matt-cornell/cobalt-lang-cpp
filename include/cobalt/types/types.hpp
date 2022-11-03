@@ -9,7 +9,9 @@ namespace cobalt {
   struct compile_context;
   namespace types {
     struct type_base {
-      type_base() = default;
+      enum type_t {INTEGER, FLOAT, POINTER, CUSTOM};
+      const type_t type;
+      type_base(type_t type) : type(type) {}
       type_base(type_base const&) = delete;
       type_base(type_base&&) = delete;
       virtual ~type_base() = 0;

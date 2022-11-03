@@ -24,7 +24,7 @@ namespace cobalt::types {
     static integer const* word(llvm::DataLayout const& layout) {return get(layout.getPointerSize() * 8, false);}
     static integer const* uword(llvm::DataLayout const& layout) {return get(layout.getPointerSize() * 8, true);}
   private:
-    integer(int nbits) : nbits(nbits) {}
+    integer(int nbits) : type_base(INTEGER), nbits(nbits) {}
     inline static std::unordered_map<int, std::unique_ptr<integer>> instances;
   };
   struct float16 : type_base {
@@ -34,7 +34,7 @@ namespace cobalt::types {
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getHalfTy(*ctx.context);}
     static float16 const* get() {return &inst;}
   private:
-    float16() = default;
+    float16() : type_base(FLOAT) {}
     static float16 inst;
   };
   struct float32 : type_base {
@@ -44,7 +44,7 @@ namespace cobalt::types {
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getFloatTy(*ctx.context);}
     static float32 const* get() {return &inst;}
   private:
-    float32() = default;
+    float32() : type_base(FLOAT) {}
     static float32 inst;
   };
   struct float64 : type_base {
@@ -54,7 +54,7 @@ namespace cobalt::types {
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getDoubleTy(*ctx.context);}
     static float64 const* get() {return &inst;}
   private:
-    float64() = default;
+    float64() : type_base(FLOAT) {}
     static float64 inst;
   };
   struct float128 : type_base {
@@ -64,7 +64,7 @@ namespace cobalt::types {
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getFP128Ty(*ctx.context);}
     static float128 const* get() {return &inst;}
   private:
-    float128() = default;
+    float128() : type_base(FLOAT) {}
     static float128 inst;
   };
   // silence errors about incomplete types

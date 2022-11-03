@@ -30,9 +30,13 @@ namespace cobalt::types {
     std::size_t size() const override;
     std::size_t align() const override;
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override;
-    static tuple const* get(std::vector<type_ptr> const& types) {return instances.try_emplace(types, new tuple(types));}
+    static tuple const* get(std::vector<type_ptr> const& types) {
+      auto it = instances.find(types);
+      if (it == instances.end()) it = instances.insert({types, COBALT_MAKE_UNIQUE(tuple, types)}).first;
+      return it->second.get();
+    }
   private:
-    tuple(std::vector<type_ptr> const& types) : types(types) {}
+    tuple(std::vector<type_ptr> const& types) : type_base(CUSTOM), types(types) {}
     inline static std::unordered_map<std::vector<type_ptr>, std::unique_ptr<tuple>, tuple_hash, tuple_eq> instances;
   };
   struct variant : type_base {
@@ -43,11 +47,11 @@ namespace cobalt::types {
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override;
     static variant const* get(std::unordered_set<type_ptr> const& types) {
       auto it = instances.find(types);
-      if (it == instances.end()) it = instances.insert({types, COBALT_MAKE_UNIQUE(tuple, types)}).first;
+      if (it == instances.end()) it = instances.insert({types, COBALT_MAKE_UNIQUE(variant, types)}).first;
       return it->second.get();
     }
   private:
-    variant(std::unordered_set<type_ptr> const& types) : types(types) {}
+    variant(std::unordered_set<type_ptr> const& types) : type_base(CUSTOM), types(types) {}
     inline static std::unordered_map<std::unordered_set<type_ptr>, std::unique_ptr<variant>, variant_hash> instances;
   };
   struct struct_ : type_base {
@@ -58,9 +62,6 @@ namespace cobalt::types {
 
   };
   struct tag_enum : type_base {
-
-  };
-  struct field_enum : type_base {
 
   };
 }

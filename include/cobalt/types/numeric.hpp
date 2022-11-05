@@ -1,9 +1,10 @@
 #ifndef COBALT_TYPES_NUMERIC_HPP
 #define COBALT_TYPES_NUMERIC_HPP
 #include "types.hpp"
-#include "../context.hpp"
+#include "cobalt/context.hpp"
 #include <llvm/ADT/Twine.h>
 namespace cobalt::types {
+  using cobalt::compile_context;
   struct integer : type_base {
     int nbits;
     sstring name() const override {return sstring::get((nbits < 0 ? llvm::Twine("u") + llvm::Twine(-nbits) : llvm::Twine("i") + llvm::Twine(nbits)).str());}
@@ -15,7 +16,7 @@ namespace cobalt::types {
       return 8;
     }
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getIntNTy(*ctx.context, nbits < 0 ? -nbits : nbits);}
-    static integer const* get(unsigned bits, bool is_unsigned) {
+    static integer const* get(unsigned bits, bool is_unsigned = false) {
       int val = is_unsigned ? -(int)bits : (int)bits;
       auto it = instances.find(val);
       if (it == instances.end()) it = instances.insert({val, COBALT_MAKE_UNIQUE(integer, val)}).first;

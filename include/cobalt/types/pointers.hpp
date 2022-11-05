@@ -1,8 +1,10 @@
 #ifndef COBALT_TYPES_POINTERS_HPP
 #define COBALT_TYPES_POINTERS_HPP
-#include "types.hpp"
+#include "cobalt/types.hpp"
+#include "cobalt/context.hpp"
 #include <llvm/IR/DerivedTypes.h>
 namespace cobalt::types {
+  using cobalt::compile_context;
   struct pointer : type_base {
     type_ptr base;
     sstring name() const override {return sstring::get(base->name() + "*");}
@@ -30,7 +32,7 @@ namespace cobalt::types {
       return it->second.get();
     }
   private:
-    reference(type_ptr base) : type_base(base->type), base(base) {}
+    reference(type_ptr base) : type_base(REFERENCE), base(base) {}
     inline static std::unordered_map<type_ptr, std::unique_ptr<reference>> instances;
   };
   struct borrow : type_base {
@@ -45,7 +47,7 @@ namespace cobalt::types {
       return it->second.get();
     }
   private:
-    borrow(type_ptr base) : type_base(base->type), base(base) {}
+    borrow(type_ptr base) : type_base(base->kind), base(base) {}
     inline static std::unordered_map<type_ptr, std::unique_ptr<borrow>> instances;
   };
 }

@@ -6,28 +6,33 @@ namespace cobalt {
     struct vardef_ast : ast_base {
       sstring name;
       AST val;
-      vardef_ast(location loc, sstring name, AST&& val) : ast_base(loc), name(name), CO_INIT(val) {}
+      bool global;
+      vardef_ast(location loc, sstring name, AST&& val, bool global = false) : ast_base(loc), name(name), CO_INIT(val), global(global) {}
       bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<vardef_ast const*>(other)) return name == ptr->name && val == ptr->val; else return false;}
+      typed_value codegen(compile_context& ctx) const override;
+      type_ptr type(base_context& ctx) const override;
     private: 
-    typed_value codegen_impl(compile_context& ctx) const override;
-    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
+      void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
     };
     struct mutdef_ast : ast_base {
       sstring name;
       AST val;
-      mutdef_ast(location loc, sstring name, AST&& val) : ast_base(loc), name(name), CO_INIT(val) {}
+      bool global;
+      mutdef_ast(location loc, sstring name, AST&& val, bool global = false) : ast_base(loc), name(name), CO_INIT(val), global(global) {}
       bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<mutdef_ast const*>(other)) return name == ptr->name && val == ptr->val; else return false;}
+      typed_value codegen(compile_context& ctx) const override;
+      type_ptr type(base_context& ctx) const override;
     private: 
-    typed_value codegen_impl(compile_context& ctx) const override;
-    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
+      void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
     };
     struct varget_ast : ast_base {
       sstring name;
       varget_ast(location loc, sstring name) : ast_base(loc), name(name) {}
       bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<varget_ast const*>(other)) return name == ptr->name; else return false;}
-      private: 
-    typed_value codegen_impl(compile_context& ctx) const override;
-    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
+      typed_value codegen(compile_context& ctx) const override;
+      type_ptr type(base_context& ctx) const override;
+    private: 
+      void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
     };
   }
 }

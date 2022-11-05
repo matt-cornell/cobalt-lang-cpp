@@ -1,17 +1,18 @@
 #ifndef COBALT_TYPES_TYPES_HPP
 #define COBALT_TYPES_TYPES_HPP
 #define COBALT_MAKE_UNIQUE(TYPE, ...) std::unique_ptr<TYPE>(new TYPE(__VA_ARGS__))
-#include "../support/sstring.hpp"
-#include "../support/location.hpp"
+#include "cobalt/context.hpp"
+#include "cobalt/support/sstring.hpp"
+#include "cobalt/support/location.hpp"
 #include <llvm/IR/Type.h>
 #include <llvm/IR/LLVMContext.h>
 namespace cobalt {
   struct compile_context;
   namespace types {
     struct type_base {
-      enum type_t {INTEGER, FLOAT, POINTER, CUSTOM};
-      const type_t type;
-      type_base(type_t type) : type(type) {}
+      enum kind_t {INTEGER, FLOAT, POINTER, REFERENCE, CUSTOM};
+      const kind_t kind;
+      type_base(kind_t kind) : kind(kind) {}
       type_base(type_base const&) = delete;
       type_base(type_base&&) = delete;
       virtual ~type_base() = 0;

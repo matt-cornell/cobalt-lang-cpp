@@ -21,7 +21,7 @@ add_library(cobalt
     include/cobalt/support/location.hpp include/cobalt/support/sstring.hpp include/cobalt/support/functions.hpp include/cobalt/support/token.hpp
     include/cobalt/types.hpp include/cobalt/types/types.hpp include/cobalt/types/numeric.hpp include/cobalt/types/pointers.hpp include/cobalt/types/structurals.hpp
     include/cobalt/context.hpp include/cobalt/varmap.hpp include/cobalt/typed_value.hpp
-  src/cobalt/tokenizer.cpp src/cobalt/macros.cpp src/cobalt/parser.cpp src/cobalt/print-ast.cpp src/cobalt/codegen.cpp)
+  src/cobalt/tokenizer.cpp src/cobalt/macros.cpp src/cobalt/parser.cpp src/cobalt/print-ast.cpp src/cobalt/ast-type.cpp src/cobalt/codegen.cpp)
 if(CMAKE_BUILD_TYPE STREQUAL Debug AND EXISTS "${PROJECT_SOURCE_DIR}/stacktrace.cpp")
   target_sources(cobalt PUBLIC "${PROJECT_SOURCE_DIR}/stacktrace.cpp")
 endif()

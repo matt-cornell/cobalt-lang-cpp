@@ -140,8 +140,10 @@ AST parse_literals(span<token> code, flags_t flags) {
       }
       case '1':
         return AST::create<ast::float_ast>(code.front().loc, reinterpret_cast<float const&>(tok[1]), sstring::get(""));
+      case '\'':
+        return AST::create<ast::char_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       case '"':
-        return AST::create<ast::string_ast>(code.front().loc, (llvm::Twine("\"") + tok.substr(1) + "\"").str(), sstring::get(""));
+        return AST::create<ast::string_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       default:
         return AST::create<ast::varget_ast>(code.front().loc, sstring::get(tok));
     }
@@ -199,10 +201,56 @@ AST parse_groups(span<token> code, flags_t flags) {
       return parse_literals(code, flags);
   }
 }
+AST parse_calls(span<token> code, flags_t flags) {
+  if (code.empty()) return AST(nullptr);
+  switch (code.back().data.front()) {
+    case ')': {
+      auto it = code.end() - 1, end = code.begin() - 1;
+      std::size_t depth = 1;
+      while (depth && --it != end) switch (it->data.front()) {
+        case '(': --depth; break;
+        case ')': ++depth; break;
+      }
+      if (it == end && depth) {
+        flags.onerror((it + 1)->loc, "unmatched closing bracket", ERROR);
+        return AST(nullptr);
+      }
+      std::vector<AST> args;
+      auto it2 = it;
+      while (it2 != end && it2->data.front() != ')') {
+        auto [a, i] = parse_expr({it2 + 1, code.end() - 1}, flags, ",");
+        it2 = i;
+        if (a) args.push_back(std::move(a));
+      }
+      return AST::create<ast::call_ast>(code.front().loc, parse_calls({code.begin(), it}, flags), std::move(args));
+    } break;
+    case ']': {
+      auto it = code.end() - 1, end = code.begin() - 1;
+      std::size_t depth = 1;
+      while (depth && --it != end) switch (it->data.front()) {
+        case '[': --depth; break;
+        case ']': ++depth; break;
+      }
+      if (it == end && depth) {
+        flags.onerror((it + 1)->loc, "unmatched closing bracket", ERROR);
+        return AST(nullptr);
+      }
+      std::vector<AST> args;
+      auto it2 = it;
+      while (it2 != end && it2->data.front() != ']') {
+        auto [a, i] = parse_expr({it2 + 1, code.end() - 1}, flags, ",");
+        it2 = i;
+        if (a) args.push_back(std::move(a));
+      }
+      return AST::create<ast::subscr_ast>(code.front().loc, parse_calls({code.begin(), it}, flags), std::move(args));
+    } break;
+    default: return parse_groups(code, flags);
+  }
+}
 AST parse_postfix(span<token> code, flags_t flags) {
   if (code.empty()) return AST(nullptr);
   for (auto op : post_ops) if (code.back().data == op) return AST::create<ast::unop_ast>(code.back().loc, sstring::get((llvm::Twine("p") + op).str()), parse_postfix(code.subspan(0, code.size() - 1), flags));
-  return parse_groups(code, flags);
+  return parse_calls(code, flags);
 }
 AST parse_prefix(span<token> code, flags_t flags) {
   if (code.empty()) return AST(nullptr);
@@ -222,6 +270,16 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
         switch (it->data.front()) {
           case '(': ++depth; break;
           case ')': --depth; break;
+        }
+      }
+      --it;
+    } break;
+    case '[': {
+      std::size_t depth = 1;
+      while (++it != end && depth) {
+        switch (it->data.front()) {
+          case '[': ++depth; break;
+          case ']': --depth; break;
         }
       }
       --it;
@@ -246,6 +304,16 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
           switch (it->data.front()) {
             case '(': ++depth; break;
             case ')': --depth; break;
+          }
+        }
+        --it;
+      } break;
+      case '[': {
+        std::size_t depth = 1;
+        while (++it != end && depth) {
+          switch (it->data.front()) {
+            case '[': ++depth; break;
+            case ']': --depth; break;
           }
         }
         --it;
@@ -300,6 +368,16 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
       }
       ++it;
     } break;
+    case ']': {
+      std::size_t depth = 1;
+      while (--it != end && depth) {
+        switch (it->data.front()) {
+          case '[': --depth; break;
+          case ']': ++depth; break;
+        }
+      }
+      ++it;
+    } break;
     case '}': {
       std::size_t depth = 1;
       while (--it != end && depth) {
@@ -320,6 +398,16 @@ AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* star
           switch (it->data.front()) {
             case '(': --depth; break;
             case ')': ++depth; break;
+          }
+        }
+        ++it;
+      } break;
+      case ']': {
+        std::size_t depth = 1;
+        while (--it != end && depth) {
+          switch (it->data.front()) {
+            case '[': --depth; break;
+            case ']': ++depth; break;
           }
         }
         ++it;
@@ -365,22 +453,15 @@ std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags
   auto it = code.begin(), end = code.end();
   std::size_t paren = 0, brack = 0, brace = 0;
   auto nc = [exit_chars](char c) {return exit_chars.find(c) == std::string::npos;};
-  bool incr_last = true;
-  for (char c : exit_chars) switch (c) {
-    case ')':
-    case ']':
-    case '}':
-      incr_last = false;
-      goto PE_END;
-  }
-  PE_END:
-  for (; it != end && (paren || brack || brace || nc(it->data.front())); ++it) switch (it->data.front()) {
-    case '(': ++paren; break;
-    case ')': --paren; break;
-    case '[': ++brack; break;
-    case ']': --brack; break;
-    case '{': ++brace; break;
-    case '}': --brace; break;
+  for (; it != end && (paren || brack || brace || nc(it->data.front())); ++it) {
+    switch (it->data.front()) {
+      case '(': ++paren; break;
+      case ')': --paren; break;
+      case '[': ++brack; break;
+      case ']': --brack; break;
+      case '{': ++brace; break;
+      case '}': --brace; break;
+    }
   }
   return {parse_infix({code.begin(), it}, flags, &bin_ops[2]), it};
 }

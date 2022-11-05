@@ -69,6 +69,13 @@ void cobalt::ast::call_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix
   auto last = &args.back();
   for (auto const& ast : args) print_node(os, prefix, ast, &ast == last);
 }
+void cobalt::ast::subscr_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, "subscript");
+  print_node(os, prefix, val, args.empty());
+  if (args.empty()) return;
+  auto last = &args.back();
+  for (auto const& ast : args) print_node(os, prefix, ast, &ast == last);
+}
 void cobalt::ast::fndef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   auto sz = args.size();
   if (sz) {
@@ -90,12 +97,12 @@ void cobalt::ast::float_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefi
   os << '\n';
 }
 void cobalt::ast::string_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  os << "int: " << val;
+  os << "string: " << val;
   if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
 void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
-  os << "int: " << val;
+  os << "char: " << val;
   if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }

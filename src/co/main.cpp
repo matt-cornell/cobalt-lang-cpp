@@ -3,7 +3,6 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
-// TODO: add help and usage messages
 constexpr char help[] = R"(co- Cobalt compiler and build tool
 subcommands:
 co aot: compile file
@@ -44,22 +43,25 @@ tokens are printed as file:line:col: data, where data will be printed as hex for
 constexpr char parse_help[] = R"(co parse file1, file2...
 -c                          interpret next argument as code to parse
 )";
-void pretty_print(cobalt::token const& tok) {
+std::size_t len(cobalt::token const& tok) {return tok.loc.file.size() + long(std::log10(tok.loc.line) + 1) + long(std::log10(tok.loc.col) + 1);}
+void pretty_print(llvm::raw_ostream& os, std::size_t sz, cobalt::token const& tok) {
   constexpr char chars[] = "0123456789abcdef";
-  llvm::outs() << tok.loc << ":\t";
+  std::size_t sz2 = len(tok);
+  os << tok.loc << ": ";
+  for (std::size_t i = sz2; i < sz; ++i) os << ' ';
   if (tok.data.size()) {
     char c = tok.data.front();
     if (c >= '0' && c <= '9') {
-      llvm::outs() << c;
+      os << c;
       auto it = tok.data.begin();
-      llvm::outs() << ' ';
+      os << ' ';
       while (++it != tok.data.end()) {
-        llvm::outs() << chars[(unsigned char)(*it) >> 4] << chars[*it & 15];
+        os << chars[(unsigned char)(*it) >> 4] << chars[*it & 15];
       }
     }
-    else llvm::outs() << tok.data;
+    else os << tok.data;
   }
-  llvm::outs() << '\n';
+  os << '\n';
 }
 template <int code> int cleanup() {llvm::errs().flush(); return code;}
 int main(int argc, char** argv) {
@@ -75,7 +77,6 @@ int main(int argc, char** argv) {
         return cleanup<0>();
       case 3: {
         cmd = argv[2];
-        // TODO: add help messages
         if (cmd == "help") {llvm::outs() << help; return cleanup<0>();}
         else if (cmd == "usage") {llvm::outs() << usage; return cleanup<0>();}
         else if (cmd == "aot") {llvm::outs() << aot_help; return cleanup<0>();}
@@ -113,7 +114,9 @@ co help [category]
           fail = true;
         }
       }
-      for (auto const& tok : toks) pretty_print(tok);
+      std::size_t sz = 0;
+      for (auto const& tok : toks) sz = std::max(sz, len(tok));
+      for (auto const& tok : toks) pretty_print(llvm::outs(), sz, tok);
       fail |= handler.errors;
     }
     return fail;
@@ -143,6 +146,142 @@ co help [category]
     }
     return fail;
   }
+  if (cmd == "debug") {
+    bool markdown = false;
+    std::string_view output = "";
+    std::string_view code = "";
+    bool code_set = false;
+    std::string_view source = "";
+    for (auto it = argv + 2; it != argv + argc; ++it) {
+      std::string_view flag = *it;
+      if (flag.front() == '-' && flag.size() != 1) {
+        flag.remove_prefix(1);
+        if (flag.front() == '-') {
+          flag.remove_prefix(1);
+          if (flag == "markdown") {
+            if (markdown) llvm::errs() << "reuse of --markdown flag\n";
+            else markdown = true;
+          }
+          else {
+            llvm::errs() << "unknown flag --" << flag << '\n';
+            return cleanup<1>();
+          }
+        }
+        for (char c : flag) switch (c) {
+          case 'c':
+            code_set = true;
+            if (++it == argv + argc) {
+              llvm::errs() << "unspecified input for -c flag\n";
+              return cleanup<1>();
+            }
+            code = *it;
+            break;
+          case 'm':
+            if (markdown) llvm::errs() << "reuse of -m flag\n";
+            else markdown = true;
+            break;
+          case 'o':
+            if (output.size()) {
+              llvm::errs() << "redefinition of output file\n";
+              return cleanup<1>();
+            }
+            if (++it == argv + argc) {
+              llvm::errs() << "unspecified output file\n";
+              return cleanup<1>();
+            }
+            output = *it;
+            break;
+          default:
+            llvm::outs() << "unknown flag -" << c;
+            return cleanup<1>();
+        }
+      }
+      else {
+        if (code_set) {
+          llvm::errs() << "redefiniton of input\n";
+          return cleanup<1>();
+        }
+        code_set = true;
+        source = flag;
+        auto f = llvm::MemoryBuffer::getFileOrSTDIN(flag, true, false);
+        if (!f) {
+          llvm::errs() << f.getError().message();
+          return cleanup<1>();
+        }
+        code = std::string_view{f.get()->getBuffer().data(), f.get()->getBufferSize()};
+      }
+    }
+    std::error_code ec;
+    llvm::raw_fd_ostream os({output.empty() ? (std::string(source.empty() ? "cmdline" : (source == "-" ? "stdin" : source)) + (markdown ? ".md" : ".out")) : output}, ec);
+    if (ec) {
+      llvm::errs() << ec.message() << '\n';
+      return cleanup<3>();
+    }
+    cobalt::flags_t flags;
+    cobalt::default_handler_t h;
+    flags.onerror = h;
+    std::size_t tok_warn, tok_err, ast_warn, ast_err, ll_warn, ll_err;
+    bool tok_crit, ast_crit, ll_crit;
+    std::string_view pretty_src = source.empty() ? "<command line>" : (source == "-" ? "<stdin>" : source);
+    auto toks = cobalt::tokenize(code, cobalt::sstring::get(pretty_src), flags);
+    tok_warn = std::exchange(h.warnings, 0);
+    tok_err  = std::exchange(h.errors, 0);
+    tok_crit = std::exchange(h.critical, false);
+    auto ast = cobalt::parse({toks.begin(), toks.end()}, flags);
+    ast_warn = std::exchange(h.warnings, 0);
+    ast_err  = std::exchange(h.errors, 0);
+    ast_crit = std::exchange(h.critical, false);
+    cobalt::compile_context ctx{std::string(pretty_src)};
+    ast(ctx);
+    ll_warn = h.warnings;
+    ll_err  = h.errors;
+    ll_crit = h.critical;
+    std::size_t sz = 0;
+    for (auto const& tok : toks) sz = std::max(sz, len(tok));
+    if (markdown) {
+      if (source.empty()) os << "# Original\nThis is the original source from the command line:\n```\n";
+      else if (source == "-") os << "# Original\nThis is the original source from the standard input:\n```\n";
+      else os << "# Original\nThis is the original source from `" << source << "`:\n```\n";
+      os << code;
+      os << "\n```\n# Tokens\nThese are the generated tokens:\n```\n";
+      for (auto const& tok : toks) pretty_print(os, sz, tok);
+      os << "```\nThere were " << tok_warn << " warnings and " << tok_err << " errors.";
+      if (tok_crit) os << "\nThere was at least one critical error.\n";
+      else os << "\nThere were no critical errors.\n";
+      os << "\n# AST\nThis is the generated AST:\n```\n";
+      ast.print(os);
+      os << "```\nThere were " << ast_warn << " warnings and " << ast_err << " errors.";
+      if (ast_crit) os << "\nThere was at least one critical error.\n";
+      else os << "\nThere were no critical errors.\n";
+      os << "\n# LLVM IR\nThis is the generated IR:\n```\n";
+      os << *ctx.module;
+      os << "```\nThere were " << ll_warn << " warnings and " << ll_err << " errors.";
+      if (ll_crit) os << "\nThere was at least one critical error.";
+      else os << "\nThere were no critical errors.";
+    }
+    else {
+      if (source.empty()) os << "Original\nThis is the original source from the command line:\n\n";
+      else if (source == "-") os << "Original\nThis is the original source from the standard input:\n\n";
+      else os << "Original\nThis is the original source from `" << source << "`:\n\n";
+      os << code;
+      os << "\n\nTokens\nThese are the generated tokens:\n\n";
+      for (auto const& tok : toks) pretty_print(os, sz, tok);
+      os << "\nThere were " << tok_warn << " warnings and " << tok_err << " errors.";
+      if (tok_crit) os << "\nThere was at least one critical error.\n";
+      else os << "\nThere were no critical errors.\n";
+      os << "\nAST\nThis is the generated AST:\n\n";
+      ast.print(os);
+      os << "\nThere were " << ast_warn << " warnings and " << ast_err << " errors.";
+      if (ast_crit) os << "\nThere was at least one critical error.\n";
+      else os << "\nThere were no critical errors.\n";
+      os << "\nLLVM IR\nThis is the generated IR:\n\n";
+      os << *ctx.module;
+      os << "\nThere were " << ll_warn << " warnings and " << ll_err << " errors.";
+      if (ll_crit) os << "\nThere was at least one critical error.";
+      else os << "\nThere were no critical errors.";
+    }
+    return cleanup<0>();
+  }
   if (cmd == "build") {
     // TODO: add build command
     return cleanup<0>();
@@ -157,7 +296,14 @@ co help [category]
       std::string_view cmd = *it;
       if (cmd.front() == '-') {
         cmd.remove_prefix(1);
-        switch (cmd.front()) {
+        if (cmd.empty()) {
+          if (!input.empty()) {
+            llvm::errs() << "redefinition of input file\n";
+            return cleanup<1>();
+          }
+          input = "-";
+        }
+        else switch (cmd.front()) {
           case '-':
             cmd.remove_prefix(1);
             if (cmd.substr(0, 5) == "emit-") {
@@ -186,9 +332,6 @@ co help [category]
               return cleanup<1>();
             }
             break;
-          case 'l':
-            linked.push_back(cmd.substr(1));
-            break;
           case 'O':
             if (cmd.size() > 2) {
               llvm::errs() << "optimization level should be a single-digit number\n";
@@ -203,8 +346,15 @@ co help [category]
             break;
           default:
             for (char c : cmd) switch (c) {
-              case 'l': llvm::errs() << "-l flag must not be specified with any other flags\n"; return cleanup<1>();
               case 'O': llvm::errs() << "-O flag must not be specified with any other flags\n"; return cleanup<1>();
+              case 'l':
+                ++it;
+                if (it == argv + argc) {
+                  llvm::errs() << "unspecified linked library\n";
+                  return cleanup<1>();
+                }
+                linked.push_back(*it);
+                break;
               case 'o':
                 if (!output.empty()) {
                   llvm::errs() << "redefinition of output file\n";
@@ -215,6 +365,7 @@ co help [category]
                   llvm::errs() << "unspecified output file\n";
                   return cleanup<1>();
                 }
+                output = *it;
                 break;
             }
         }
@@ -228,8 +379,9 @@ co help [category]
       }
     }
     auto f = llvm::MemoryBuffer::getFileOrSTDIN(input, true, false);
+    if (input == "-") input = "<stdin>";
     if (!f) {
-      llvm::errs() << f.getError().message();
+      llvm::errs() << input << ": " << f.getError().message() << '\n';
       return cleanup<1>();
     }
     std::string_view code{f.get()->getBuffer().data(), f.get()->getBufferSize()};
@@ -246,14 +398,15 @@ co help [category]
         critical = &cobalt::werror_handler.critical;
         break;
     }
-    auto toks = cobalt::tokenize(code, cobalt::sstring::get(input == "-" ? "<stdin>" : input), flags);
+    auto toks = cobalt::tokenize(code, cobalt::sstring::get(input), flags);
     if (*critical) return cleanup<2>();
     cobalt::AST ast = cobalt::parse({toks.begin(), toks.end()}, flags);
+    cobalt::compile_context ctx{std::string(input)};
     ast(cobalt::global);
     std::error_code ec;
     llvm::raw_fd_ostream os({output}, ec);
     if (ec) {
-      llvm::errs() << ec.message();
+      llvm::errs() << ec.message() << '\n';
       return cleanup<3>();
     }
     switch (output_type) {
@@ -264,7 +417,8 @@ co help [category]
         llvm::WriteBitcodeToFile(*cobalt::global.module, os);
         break;
       default:
-
+        llvm::errs() << "only LLVM IR and bytecode outputs are currently supported\n";
+        return cleanup<1>();
         break;
     }
     // TODO: AOT compiler

@@ -39,6 +39,15 @@ namespace cobalt::ast {
     typed_value codegen_impl(compile_context& ctx) const override;
     void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
   };
+  struct subscr_ast : ast_base {
+    AST val;
+    std::vector<AST> args;
+    subscr_ast(location loc, AST val, std::vector<AST>&& args) : ast_base(loc), CO_INIT(val), CO_INIT(args) {}
+    bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<call_ast const*>(other)) return val == ptr->val && args == ptr->args; else return false;}
+  private:
+    typed_value codegen_impl(compile_context& ctx) const override;
+    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
+  };
   struct fndef_ast : ast_base {
     sstring name, ret;
     std::vector<std::pair<sstring, sstring>> args;

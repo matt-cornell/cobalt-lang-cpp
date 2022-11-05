@@ -278,7 +278,8 @@ co help [category]
         llvm::WriteBitcodeToFile(*cobalt::global.module, os);
         break;
       default:
-
+        llvm::errs() << "only LLVM IR and bytecode outputs are currently supported\n";
+        return cleanup<1>();
         break;
     }
     // TODO: AOT compiler

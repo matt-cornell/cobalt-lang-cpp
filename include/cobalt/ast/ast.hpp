@@ -13,6 +13,7 @@ namespace cobalt {
       ast_base(sstring file, std::size_t line, std::size_t col) : loc{file, line, col} {}
       ast_base(location loc) : loc(loc) {}
       virtual ~ast_base() noexcept = 0;
+      virtual bool is_const() const noexcept {return false;}
       virtual bool eq(ast_base const* other) const = 0;
       virtual typed_value codegen(compile_context& ctx = global) const = 0;
       virtual type_ptr type(base_context& ctx = global) const = 0;
@@ -42,6 +43,7 @@ namespace cobalt {
       other.ptr = nullptr;
       return *this;
     }
+    bool is_const() const noexcept {return ptr->is_const();}
     location loc() const noexcept {return ptr ? ptr->loc : nullloc;}
     sstring file() const noexcept {return ptr ? ptr->loc.file : sstring::get("");}
     std::size_t line() const noexcept {return ptr ? ptr->loc.line : 0;}

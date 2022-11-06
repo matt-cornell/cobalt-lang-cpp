@@ -139,20 +139,28 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   }
   auto local = name.substr(old + 1);
   if (global) {
-    auto t = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
-    if (!t) return nullval;
-    auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
-    if (!f) return nullval;
-    auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr);
-    auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
-    ctx.builder.SetInsertPoint(bb);
-    auto tv = val(ctx);
-    ctx.builder.CreateStore(gv, tv.value);
-    ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
-    vm->insert(sstring::get(local), variable{{gv, tv.type}, true});
-    auto arr_ty = llvm::ArrayType::get(llvm::StructType::get(*ctx.context, {llvm::Type::getInt32Ty(*ctx.context), llvm::PointerType::get(*ctx.context, 0)}), 1);
-    new llvm::GlobalVariable(*ctx.module, arr_ty, true, llvm::GlobalValue::LinkageTypes::AppendingLinkage, llvm::ConstantArray::get(arr_ty, {f}), "llvm.global_ctors");
-    return tv;
+    if (val.is_const()) {
+      auto tv = val(ctx);
+      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
+      auto type = types::reference::get(tv.type);
+      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      return {gv, type};
+    }
+    else {
+      auto t = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
+      if (!t) return nullval;
+      auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
+      if (!f) return nullval;
+      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name);
+      auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
+      ctx.builder.SetInsertPoint(bb);
+      auto tv = val(ctx);
+      ctx.builder.CreateStore(gv, tv.value);
+      ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
+      auto type = types::reference::get(tv.type);
+      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      return {gv, type};
+    }
   }
   else {
     auto tv = val(ctx);
@@ -193,19 +201,28 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
   }
   auto local = name.substr(old + 1);
   if (global) {
-    auto t = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
-    if (!t) return nullval;
-    auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
-    if (!f) return nullval;
-    auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr);
-    auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
-    ctx.builder.SetInsertPoint(bb);
-    auto tv = val(ctx);
-    ctx.builder.CreateStore(gv, tv.value);
-    ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
-    auto type = types::reference::get(tv.type);
-    vm->insert(sstring::get(local), variable{{gv, type}, true});
-    return {gv, type};
+    if (val.is_const()) {
+      auto tv = val(ctx);
+      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
+      auto type = types::reference::get(tv.type);
+      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      return {gv, type};
+    }
+    else {
+      auto t = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
+      if (!t) return nullval;
+      auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
+      if (!f) return nullval;
+      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name);
+      auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
+      ctx.builder.SetInsertPoint(bb);
+      auto tv = val(ctx);
+      ctx.builder.CreateStore(gv, tv.value);
+      ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
+      auto type = types::reference::get(tv.type);
+      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      return {gv, type};
+    }
   }
   else {
     auto tv = val(ctx);

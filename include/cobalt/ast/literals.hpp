@@ -6,6 +6,7 @@ namespace cobalt::ast {
   struct literal_ast : ast_base {
     sstring suffix;
     literal_ast(location loc, sstring suffix) : ast_base(loc), suffix(suffix) {}
+    bool is_const() const noexcept override {return true;}
     ~literal_ast();
   };
   inline literal_ast::~literal_ast() {}

@@ -10,7 +10,7 @@ namespace cobalt::types {
     sstring name() const override {return sstring::get(base->name() + "*");}
     std::size_t size() const override {return 8;} // TODO: support 32-bit platforms
     std::size_t align() const override {return 8;}
-    llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return llvm::PointerType::get(base->llvm_type(loc, ctx), 0);}
+    llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return llvm::ArrayType::get(base->llvm_type(loc, ctx), 0);}
     static pointer const* get(type_ptr base) {
       auto it = instances.find(base);
       if (it == instances.end()) it = instances.insert({base, COBALT_MAKE_UNIQUE(pointer, base)}).first;

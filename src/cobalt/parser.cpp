@@ -981,7 +981,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
-          tl_nodes.push_back(AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val)));
+          tl_nodes.push_back(AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), true));
         }
         else if (tok == "mixin") UNSUPPORTED("mixin")
         else goto TL_DEFAULT;
@@ -1216,7 +1216,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
-          tl_nodes.push_back(AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val)));
+          tl_nodes.push_back(AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), true));
         }
         else goto TL_DEFAULT;
         break;

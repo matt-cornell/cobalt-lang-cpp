@@ -9,10 +9,19 @@ typed_value cobalt::ast::top_level_ast::codegen(compile_context& ctx) const {
   return nullval;
 }
 typed_value cobalt::ast::group_ast::codegen(compile_context& ctx) const {
-  for (auto const& ast : insts) ast(ctx);
-  return nullval;
+  typed_value last {};
+  for (auto const& ast : insts) last = ast(ctx);
+  return last;
 }
-typed_value cobalt::ast::block_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::block_ast::codegen(compile_context& ctx) const {
+  ctx.vars = new varmap(ctx.vars);
+  typed_value last {};
+  for (auto const& ast : insts) last = ast(ctx);
+  auto vars = ctx.vars;
+  ctx.vars = ctx.vars->parent;
+  delete vars;
+  return last;
+}
 typed_value cobalt::ast::if_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::while_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::for_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}

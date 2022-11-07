@@ -52,7 +52,8 @@ namespace cobalt::ast {
     sstring name, ret;
     std::vector<std::pair<sstring, sstring>> args;
     AST body;
-    fndef_ast(location loc, sstring name, sstring ret, std::vector<std::pair<sstring, sstring>>&& args, AST&& body) : ast_base(loc), name(name), ret(ret), CO_INIT(args), CO_INIT(body) {}
+    std::vector<std::string> annotations;
+    fndef_ast(location loc, sstring name, sstring ret, std::vector<std::pair<sstring, sstring>>&& args, AST&& body, std::vector<std::string>&& annotations) : ast_base(loc), name(name), ret(ret), CO_INIT(args), CO_INIT(body), CO_INIT(annotations) {}
     bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<fndef_ast const*>(other)) return name == ptr->name && args == ptr->args; else return false;}
   private:
     typed_value codegen_impl(compile_context& ctx) const override;

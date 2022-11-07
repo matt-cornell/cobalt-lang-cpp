@@ -473,7 +473,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
   std::vector<std::string> annotations;
   switch (tok.front()) {
     case ';': break;
-    case '@': annotations.push_back(std::string(tok.substr(1)));
+    case '@': annotations.push_back(std::string(tok.substr(1))); break;
     case 'c':
       if (tok == "cr") UNSUPPORTED("coroutine")
       else goto ST_DEFAULT;
@@ -848,7 +848,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
     std::string_view tok = it->data;
     switch (tok.front()) {
       case ';': llvm::outs() << ";\n"; break;
-      case '@': annotations.push_back(std::string(tok.substr(1)));
+      case '@': annotations.push_back(std::string(tok.substr(1))); break;
       case 'c':
         if (tok == "cr") {annotations.clear(); UNSUPPORTED("coroutine")}
         else goto TL_DEFAULT;

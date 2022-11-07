@@ -89,7 +89,7 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
     case CUSTOM: return nullptr;
   }
 }
-type_ptr parse_type(sstring str) {
+static type_ptr parse_type(sstring str) {
   if (str.empty()) return nullptr;
   switch (str.back()) {
     case '&': return types::reference::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
@@ -99,7 +99,7 @@ type_ptr parse_type(sstring str) {
   switch (str.front()) {
     case 'i':
       if (str == isize) return types::integer::get(sizeof(void*) * 8, false);
-      if (str.find_first_not_of("0123456789", 1) != std::string::npos) {
+      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
         unsigned width = 0;
         for (char c : str.substr(1)) {
           width *= 10;
@@ -109,7 +109,7 @@ type_ptr parse_type(sstring str) {
       }
     case 'u':
       if (str == usize) return types::integer::get(sizeof(void*) * 8, true);
-      if (str.find_first_not_of("0123456789", 1) != std::string::npos) {
+      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
         unsigned width = 0;
         for (char c : str.substr(1)) {
           width *= 10;
@@ -211,7 +211,7 @@ type_ptr cobalt::ast::varget_ast::type(base_context& ctx) const {
     idx = name.find('.', old);
     if (ptr) {
       auto pidx = ptr->index();
-      if (idx == std::string::npos) return pidx == 0 ? std::get<0>(*ptr).var.type : nullptr;
+      if (idx == std::string::npos) return pidx == 0 ? std::get<0>(*ptr).type : nullptr;
       else {
         if (pidx == 3) vm = std::get<3>(*ptr).get();
         else return nullptr;

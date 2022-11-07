@@ -3,8 +3,125 @@
 #include "cobalt/varmap.hpp"
 #include "cobalt/types.hpp"
 using namespace cobalt;
-// flow.hpp
+using enum types::type_base::kind_t;
 const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize");
+static type_ptr parse_type(sstring str) {
+  if (str.empty()) return nullptr;
+  switch (str.back()) {
+    case '&': return types::reference::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
+    case '*': return types::pointer::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
+    case '^': return types::borrow::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
+  }
+  switch (str.front()) {
+    case 'i':
+      if (str == isize) return types::integer::get(sizeof(void*) * 8, false);
+      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
+        unsigned width = 0;
+        for (char c : str.substr(1)) {
+          width *= 10;
+          width += c - '0';
+        }
+        return types::integer::get(width, false);
+      }
+    case 'u':
+      if (str == usize) return types::integer::get(sizeof(void*) * 8, true);
+      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
+        unsigned width = 0;
+        for (char c : str.substr(1)) {
+          width *= 10;
+          width += c - '0';
+        }
+        return types::integer::get(width, true);
+      }
+    case 'f':
+      if (str == f16) return types::float16::get();
+      if (str == f32) return types::float32::get();
+      if (str == f64) return types::float64::get();
+      if (str == f128) return types::float128::get();
+  }
+  return nullptr;
+}
+static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, location loc, compile_context& ctx) {
+  if (!(t1 && t2)) return nullptr;
+  if (t1 == t2) return v;
+  switch (t1->kind) {
+    case INTEGER: switch (t2->kind) {
+      case INTEGER: {
+        auto lb = static_cast<types::integer const*>(t1)->nbits, rb = static_cast<types::integer const*>(t2)->nbits;
+        if (lb < 0) {
+          if (rb < 0) {
+            if (rb < lb) return ctx.builder.CreateZExt(v, t2->llvm_type(loc, ctx));
+            else {
+              ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " loses precision").str(), WARNING);
+              return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+            }
+          }
+          else {
+            if (rb > -lb) return ctx.builder.CreateZExt(v, t2->llvm_type(loc, ctx));
+            else if (rb < -lb) {
+              ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " loses precision").str(), WARNING);
+              return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+            }
+            else {
+              ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " changes sign").str(), WARNING);
+              return v;
+            }
+          }
+        }
+        else {
+          if (rb < 0) {
+            if (-rb > lb) {
+              ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " changes sign").str(), WARNING);
+              return ctx.builder.CreateZExt(v, t2->llvm_type(loc, ctx));
+            }
+            else if (-rb < lb) {
+              ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " loses precision").str(), WARNING);
+              return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+            }
+            else {
+              ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " changes sign").str(), WARNING);
+              return v;
+            }
+          }
+          else {
+            if (rb > lb) return ctx.builder.CreateSExt(v, t2->llvm_type(loc, ctx));
+            else {
+              ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " loses precision").str(), WARNING);
+              return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+            }
+          }
+        }
+      }
+      case FLOAT: {
+        auto bits = static_cast<types::integer const*>(t1)->nbits;
+        if (bits < 0) return ctx.builder.CreateUIToFP(v, t2->llvm_type(loc, ctx));
+        else return ctx.builder.CreateSIToFP(v, t2->llvm_type(loc, ctx));
+      }
+      case POINTER: return nullptr;
+      case REFERENCE: return nullptr;
+      case CUSTOM: return nullptr;
+    }
+    case FLOAT: switch (t2->kind) {
+      case INTEGER: return nullptr;
+      case FLOAT:
+        if (t2->size() > t1->size()) return ctx.builder.CreateFPExt(v, t2->llvm_type(loc, ctx));
+        else {
+          ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " loses precision").str(), WARNING);
+          return ctx.builder.CreateFPTrunc(v, t2->llvm_type(loc, ctx));
+        }
+      case POINTER: return nullptr;
+      case REFERENCE: return nullptr;
+      case CUSTOM: return nullptr;
+    }
+    case POINTER: return nullptr;
+    case REFERENCE: {
+      auto t = static_cast<types::reference const*>(t1)->base;
+      return impl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
+    }
+    case CUSTOM: return nullptr;
+  }
+}
+// flow.hpp
 typed_value cobalt::ast::top_level_ast::codegen(compile_context& ctx) const {
   for (auto const& ast : insts) ast(ctx);
   return nullval;
@@ -32,7 +149,45 @@ typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {(void)c
 typed_value cobalt::ast::unop_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::subscr_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::call_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
-typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
+  std::vector<llvm::Type*> params_t;
+  std::vector<type_ptr> args_t;
+  params_t.reserve(args.size());
+  args_t.reserve(args.size());
+  for (auto [_, type] : args) {
+    auto t = parse_type(type);
+    if (!t) {
+      ctx.flags.onerror(loc, (llvm::Twine("invalid type name '") + type + "' for function parameter").str(), ERROR);
+      return nullval;
+    }
+    args_t.push_back(t);
+    params_t.push_back(t->llvm_type(loc, ctx));
+  }
+  auto t = parse_type(ret);
+  if (!t) {
+    ctx.flags.onerror(loc, (llvm::Twine("invalid type name '") + ret + "' for function return types").str(), ERROR);
+    return nullval;
+  }
+  auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
+  auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, *ctx.module);
+  if (!f) return nullval;
+  auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
+  auto ip = ctx.builder.GetInsertBlock();
+  ctx.builder.SetInsertPoint(bb);
+  ctx.vars = new varmap(ctx.vars);
+  for (std::size_t i = 0; i < args.size(); ++i) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
+  auto tv = body(ctx);
+  if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+  else {
+    auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
+    if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+    else ctx.builder.CreateRet(p);
+  }
+  auto vars = ctx.vars;
+  ctx.vars = ctx.vars->parent;
+  delete vars;
+  return nullval;
+}
 // literals.hpp
 typed_value cobalt::ast::integer_ast::codegen(compile_context& ctx) const {
   if (suffix.empty()) return {llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(*ctx.context), val), types::integer::get(64)};
@@ -143,7 +298,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       auto tv = val(ctx);
       auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
       auto type = types::reference::get(tv.type);
-      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
     else {
@@ -158,13 +313,13 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       ctx.builder.CreateStore(gv, tv.value);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(tv.type);
-      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
   }
   else {
     auto tv = val(ctx);
-    vm->insert(sstring::get(local), variable{tv, false});
+    vm->insert(sstring::get(local), tv);
     return tv;
   }
 }
@@ -205,7 +360,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       auto tv = val(ctx);
       auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
       auto type = types::reference::get(tv.type);
-      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
     else {
@@ -220,7 +375,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       ctx.builder.CreateStore(gv, tv.value);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(tv.type);
-      vm->insert(sstring::get(local), variable{{gv, type}, true});
+      vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
   }
@@ -229,7 +384,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
     auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx));
     ctx.builder.CreateStore(a, tv.value);
     auto type = types::reference::get(tv.type);
-    vm->insert(sstring::get(local), variable{{a, type}, true});
+    vm->insert(sstring::get(local), typed_value{a, type});
     return {a, type};
   }
 }
@@ -245,10 +400,7 @@ typed_value cobalt::ast::varget_ast::codegen(compile_context& ctx) const {
     if (ptr) {
       auto idx = ptr->index();
       if (idx == std::string::npos) {
-        if (idx == 0) {
-          auto val = std::get<0>(*ptr);
-          return val.is_mut ? typed_value{ctx.builder.CreateLoad(val.var.type->llvm_type(loc, ctx), val.var.value), val.var.type} : val.var;
-        }
+        if (idx == 0) return std::get<0>(*ptr);
         else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
       }
       else {

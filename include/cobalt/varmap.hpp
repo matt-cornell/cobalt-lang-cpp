@@ -22,10 +22,6 @@ namespace cobalt {
       }
     };
   }
-  struct variable {
-    typed_value var;
-    bool is_mut;
-  };
   struct function {
     std::unordered_map<std::vector<types::type_base const*>, llvm::Function*, param_hash, param_eq> overloads;
     std::unordered_set<std::vector<types::type_base const*>, param_hash, param_eq> merge(function const& other) {
@@ -38,7 +34,7 @@ namespace cobalt {
     }
   };
   struct varmap;
-  using symbol_type = std::variant<variable, std::shared_ptr<function>, types::type_base const*, std::shared_ptr<varmap>>;
+  using symbol_type = std::variant<typed_value, std::shared_ptr<function>, types::type_base const*, std::shared_ptr<varmap>>;
   using symbol_ptr = symbol_type const*;
   struct varmap {
     varmap* parent;

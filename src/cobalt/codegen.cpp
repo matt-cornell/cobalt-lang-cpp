@@ -121,6 +121,68 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
     case CUSTOM: return nullptr;
   }
 }
+static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, location loc, compile_context& ctx) {
+  if (!(t1 && t2)) return nullptr;
+  if (t1 == t2) return v;
+  switch (t1->kind) {
+    case INTEGER: switch (t2->kind) {
+      case INTEGER: {
+        auto lb = static_cast<types::integer const*>(t1)->nbits, rb = static_cast<types::integer const*>(t2)->nbits;
+        if (lb < 0) {
+          if (rb < 0) {
+            if (rb < lb) return ctx.builder.CreateZExt(v, t2->llvm_type(loc, ctx));
+            else return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+          }
+          else {
+            if (rb > -lb) return ctx.builder.CreateZExt(v, t2->llvm_type(loc, ctx));
+            else if (rb < -lb) return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+            else return v;
+          }
+        }
+        else {
+          if (rb < 0) {
+            if (-rb > lb) return ctx.builder.CreateZExt(v, t2->llvm_type(loc, ctx));
+            else if (-rb < lb) return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+            else return v;
+          }
+          else {
+            if (rb > lb) return ctx.builder.CreateSExt(v, t2->llvm_type(loc, ctx));
+            else return ctx.builder.CreateTrunc(v, t2->llvm_type(loc, ctx));
+          }
+        }
+      }
+      case FLOAT:
+        if (static_cast<types::integer const*>(t1)->nbits < 0) return ctx.builder.CreateUIToFP(v, t2->llvm_type(loc, ctx));
+        else return ctx.builder.CreateSIToFP(v, t2->llvm_type(loc, ctx));
+      case POINTER: return ctx.builder.CreateIntToPtr(v, t2->llvm_type(loc, ctx));
+      case REFERENCE: return nullptr;
+      case CUSTOM: return nullptr;
+    }
+    case FLOAT: switch (t2->kind) {
+      case INTEGER:
+        if (static_cast<types::integer const*>(t1)->nbits < 0) return ctx.builder.CreateFPToUI(v, t2->llvm_type(loc, ctx));
+        else return ctx.builder.CreateFPToSI(v, t2->llvm_type(loc, ctx));
+      case FLOAT:
+        if (t2->size() > t1->size()) return ctx.builder.CreateFPExt(v, t2->llvm_type(loc, ctx));
+        else return ctx.builder.CreateFPTrunc(v, t2->llvm_type(loc, ctx));
+      case POINTER: return nullptr;
+      case REFERENCE: return nullptr;
+      case CUSTOM: return nullptr;
+    }
+    case POINTER: switch (t2->kind) {
+      case INTEGER: return ctx.builder.CreatePtrToInt(v, t2->llvm_type(loc, ctx));
+      case FLOAT: return nullptr;
+      case POINTER: return ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx));
+      case REFERENCE: return nullptr;
+      case CUSTOM: return nullptr;
+    }
+    case REFERENCE: {
+      auto t = static_cast<types::reference const*>(t1)->base;
+      return impl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
+    }
+    case CUSTOM: return nullptr;
+  }
+}
 // flow.hpp
 typed_value cobalt::ast::top_level_ast::codegen(compile_context& ctx) const {
   for (auto const& ast : insts) ast(ctx);
@@ -144,7 +206,20 @@ typed_value cobalt::ast::if_ast::codegen(compile_context& ctx) const {(void)ctx;
 typed_value cobalt::ast::while_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::for_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 // funcs.hpp
-typed_value cobalt::ast::cast_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::cast_ast::codegen(compile_context& ctx) const {
+  auto t = parse_type(target);
+  if (!t) {
+    ctx.flags.onerror(loc, (llvm::Twine("invalid type name '") + target + "' in cast").str(), ERROR);
+    return nullval;
+  }
+  auto tv = val(ctx);
+  auto v = expl_convert(tv.value, tv.type, t, loc, ctx);
+  if (!v) {
+    ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '" + tv.type->name() + "' to '" + t->name() + "'")).str(), ERROR);
+    return nullval;
+  }
+  return {v, t};
+}
 typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::unop_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::subscr_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
@@ -292,7 +367,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       }
     }
   }
-  auto local = name.substr(old + 1);
+  auto local = name.substr(old);
   if (global) {
     if (val.is_const()) {
       auto tv = val(ctx);
@@ -354,7 +429,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       }
     }
   }
-  auto local = name.substr(old + 1);
+  auto local = name.substr(old);
   if (global) {
     if (val.is_const()) {
       auto tv = val(ctx);
@@ -398,20 +473,27 @@ typed_value cobalt::ast::varget_ast::codegen(compile_context& ctx) const {
     old = idx;
     idx = name.find('.', old);
     if (ptr) {
-      auto idx = ptr->index();
+      auto pidx = ptr->index();
       if (idx == std::string::npos) {
-        if (idx == 0) return std::get<0>(*ptr);
+        if (pidx == 0) return std::get<0>(*ptr);
         else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
       }
       else {
-        if (idx == 3) vm = std::get<3>(*ptr).get();
+        if (pidx == 3) vm = std::get<3>(*ptr).get();
         else ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
       }
     }
     else {
-      ctx.flags.onerror(loc, name.substr(0, old) + " is not", ERROR);
+      ctx.flags.onerror(loc, name.substr(0, old) + " does not exist", ERROR);
       return nullval;
     }
   }
+  auto ptr = vm->get(name);
+  if (ptr) {
+    auto idx = ptr->index();
+    if (idx == 0) return std::get<0>(*ptr);
+    else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
+  }
+  else ctx.flags.onerror(loc, name + " does not exist", ERROR);
   return nullval;
 }

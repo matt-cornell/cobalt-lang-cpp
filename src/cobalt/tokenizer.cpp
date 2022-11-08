@@ -474,6 +474,7 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
       case '~':
       case '|':
       case '!':
+      case '@':
       case '\\':
 #pragma endregion
         estate = WS;
@@ -485,7 +486,10 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
     step(c);
   }
   if (estate == BAD) {
-    if (it == end) estate = WS;
+    if (it == end) {
+      estate = WS;
+      ++it;
+    }
     else flags.onerror(loc, "invalid UTF-8 character", CRITICAL);
   }
   std::string_view macro_id;
@@ -542,6 +546,10 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
     args.append(start, it - 1);
   }
   else macro_id = std::string_view{start, --it};
+  if (macro_id.empty()) {
+    flags.onerror(loc, "macro name cannot be empty", ERROR);
+    return "";
+  }
   if (macro_id == "define") { // @define needs to be specially defined because it adds a macro
     flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
     return std::nullopt;

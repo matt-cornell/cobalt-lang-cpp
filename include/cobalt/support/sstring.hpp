@@ -7,7 +7,6 @@
 #include <unordered_set>
 namespace cobalt {
   class sstring : public std::string_view {
-    using std::string_view::basic_string_view;
     sstring() = delete;
     sstring(std::string_view str) : std::string_view(str) {}
     struct optional_deleter {
@@ -36,18 +35,18 @@ namespace cobalt {
     };
     inline static set_t strings;
   public:
-    using string [[deprecated("use cobalt::sstring instead of cobalt::sstring")]] = sstring;
+    using string [[deprecated("use cobalt::sstring instead of cobalt::sstring::string")]] = sstring;
     template <class K> static sstring get(K&& val) {
       if constexpr(heterogenous_lookup<set_t, decltype((std::forward<K>(val)))>::value) {
         auto it = strings.find(std::forward<K>(val));
         if (it == strings.end()) it = strings.insert(ptr_t(new std::string(std::forward<K>(val)), true)).first;
-        return sstring(**it);
+        return sstring(std::string_view{**it});
       }
       else {
         std::string str(std::forward<K>(val));
         auto it = strings.find(ptr_t(&str, false));
         if (it == strings.end()) it = strings.insert(ptr_t(new std::string(std::move(str)), true)).first;
-        return sstring(**it);
+        return sstring(std::string_view{**it});
       }
     }
   };

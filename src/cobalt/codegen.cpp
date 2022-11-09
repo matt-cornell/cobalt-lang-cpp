@@ -394,6 +394,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   }
   else {
     auto tv = val(ctx);
+    tv.value->setName(name);
     vm->insert(sstring::get(local), tv);
     return tv;
   }
@@ -456,7 +457,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
   }
   else {
     auto tv = val(ctx);
-    auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx));
+    auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
     ctx.builder.CreateStore(tv.value, a);
     auto type = types::reference::get(tv.type);
     vm->insert(sstring::get(local), typed_value{a, type});

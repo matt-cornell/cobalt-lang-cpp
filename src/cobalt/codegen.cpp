@@ -183,6 +183,87 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
     case CUSTOM: return nullptr;
   }
 }
+static typed_value unary_op(typed_value tv, std::string_view op, location loc, compile_context& ctx) {
+  if (!(tv.value && tv.type)) return nullval;
+  switch (tv.type->kind) {
+    case INTEGER:
+      if (op == "+") return tv;
+      if (op == "-") return {ctx.builder.CreateNeg(tv.value), tv.type};
+      if (op == "~") return {ctx.builder.CreateXor(tv.value, -1), tv.type};
+      return nullval;
+    case FLOAT:
+      if (op == "+") return tv;
+      if (op == "-") return {ctx.builder.CreateFNeg(tv.value), tv.type};
+      return nullval;
+    case POINTER:
+      if (op == "*") return {tv.value, types::reference::get(static_cast<types::pointer const*>(tv.type)->base)};
+      return nullval;
+    case REFERENCE: {
+      auto t = static_cast<types::reference const*>(tv.type)->base;
+      if (op == "&") return {tv.value, types::pointer::get(t)};
+      switch (t->kind) {
+        case INTEGER:
+          if (op == "++") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v1 = ctx.builder.CreateLoad(t2, tv.value);
+            auto v2 = ctx.builder.CreateAdd(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, tv.value);
+            return {v3, tv.type};
+          }
+          if (op == "--") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v1 = ctx.builder.CreateLoad(t2, tv.value);
+            auto v2 = ctx.builder.CreateSub(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, tv.value);
+            return {v3, tv.type};
+          }
+          break;
+        case FLOAT:
+          if (op == "++") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v1 = ctx.builder.CreateLoad(t2, tv.value);
+            auto v2 = ctx.builder.CreateFAdd(v1, llvm::ConstantFP::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, tv.value);
+            return {v3, tv.type};
+          }
+          if (op == "--") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v1 = ctx.builder.CreateLoad(t2, tv.value);
+            auto v2 = ctx.builder.CreateFSub(v1, llvm::ConstantFP::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, tv.value);
+            return {v3, tv.type};
+          }
+          break;
+        case POINTER:
+          if (op == "++") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+            auto v1 = ctx.builder.CreateLoad(t2, tv.value);
+            auto v2 = ctx.builder.CreateBitCast(v1, t3);
+            auto v3 = ctx.builder.CreateAdd(v2, llvm::ConstantInt::get(t3, 1));
+            auto v4 = ctx.builder.CreateBitCast(v1, t2);
+            auto v5 = ctx.builder.CreateStore(v4, tv.value);
+            return {v5, tv.type};
+          }
+          if (op == "--") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+            auto v1 = ctx.builder.CreateLoad(t2, tv.value);
+            auto v2 = ctx.builder.CreateBitCast(v1, t3);
+            auto v3 = ctx.builder.CreateSub(v2, llvm::ConstantInt::get(t3, 1));
+            auto v4 = ctx.builder.CreateBitCast(v1, t2);
+            auto v5 = ctx.builder.CreateStore(v4, tv.value);
+            return {v5, tv.type};
+          }
+          break;
+        case REFERENCE: break;
+        case CUSTOM: break;
+      }
+      return unary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), tv.value), t}, op, loc, ctx);
+    }
+    case CUSTOM: return nullval;
+  }
+}
 // flow.hpp
 typed_value cobalt::ast::top_level_ast::codegen(compile_context& ctx) const {
   for (auto const& ast : insts) ast(ctx);
@@ -221,7 +302,20 @@ typed_value cobalt::ast::cast_ast::codegen(compile_context& ctx) const {
   return {v, t};
 }
 typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
-typed_value cobalt::ast::unop_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::unop_ast::codegen(compile_context& ctx) const {
+  auto tv = val(ctx);
+  auto v2 = unary_op(tv, op, loc, ctx);
+  if (v2.value && v2.type) return v2;
+  if (tv.type) {
+    if (op.front() == 'p') ctx.flags.onerror(loc, (llvm::Twine("invalid postfix operator ") + op.substr(1) + " for value of type '" + tv.type->name() + "'").str(), ERROR);
+    else ctx.flags.onerror(loc, (llvm::Twine("invalid prefix operator ") + op + " for value of type '" + tv.type->name() + "'").str(), ERROR);
+  }
+  else {
+    if (op.front() == 'p') ctx.flags.onerror(loc, (llvm::Twine("invalid postfix operator ") + op.substr(1) + " for value of type <error>").str(), ERROR);
+    else ctx.flags.onerror(loc, (llvm::Twine("invalid prefix operator ") + op + " for value of type <error>").str(), ERROR);
+  }
+  return nullval;
+}
 typed_value cobalt::ast::subscr_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::call_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {

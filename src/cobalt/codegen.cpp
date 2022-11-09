@@ -183,6 +183,18 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
     case CUSTOM: return nullptr;
   }
 }
+static std::string concat(std::vector<std::string_view> const& vals, std::string_view other) {
+  std::size_t sz = other.size() + vals.size();
+  for (auto val : vals) sz += val.size();
+  std::string out;
+  out.reserve(sz);
+  for (auto val : vals) {
+    out += val;
+    out.push_back('.');
+  }
+  out += other;
+  return out;
+}
 // flow.hpp
 typed_value cobalt::ast::top_level_ast::codegen(compile_context& ctx) const {
   for (auto const& ast : insts) ast(ctx);
@@ -244,7 +256,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     return nullval;
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, *ctx.module);
+  auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);
   if (!f) return nullval;
   auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
   auto ip = ctx.builder.GetInsertBlock();
@@ -333,7 +345,43 @@ typed_value cobalt::ast::char_ast::codegen(compile_context& ctx) const {
   return {llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctx.context), out), types::integer::get(32)};
 }
 // scope.hpp
-typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {
+  auto vm = ctx.vars;
+  std::vector<std::string_view> old_path;
+  if (name.front() == '.') {
+    old_path = ctx.path;
+    ctx.path = {name.substr(1)};
+  }
+  else ctx.path.push_back(name);
+  if (name.front() == '.') while (vm->parent) vm = vm->parent;
+  std::size_t old = name.front() == '.', idx = name.find('.', 1);
+  while (idx != std::string::npos) {
+    auto local = name.substr(old + 1, idx - old - 1);
+    auto ss = sstring::get(local);
+    auto it = vm->symbols.find(ss);
+    old = idx;
+    idx = name.find('.', old);
+    if (it == vm->symbols.end()) {
+      if (it->second.index() == 3) vm = std::get<3>(it->second).get();
+      else {
+        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+        return nullval;
+      }
+    }
+    else {
+      if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
+      else {
+        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+        return nullval;
+      }
+    }
+  }
+  std::swap(vm, ctx.vars);
+  for (auto const& i : insts) i(ctx);
+  if (name.front() == '.') std::swap(ctx.path, old_path);
+  else ctx.path.pop_back();
+  return nullval;
+}
 typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 // vars.hpp
 typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
@@ -371,7 +419,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   if (global) {
     if (val.is_const()) {
       auto tv = val(ctx);
-      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
+      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto type = types::reference::get(tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
@@ -381,7 +429,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       if (!t) return nullval;
       auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
       if (!f) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name);
+      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
       ctx.builder.SetInsertPoint(bb);
       auto tv = val(ctx);
@@ -433,7 +481,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
   if (global) {
     if (val.is_const()) {
       auto tv = val(ctx);
-      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
+      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto type = types::reference::get(tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
@@ -443,7 +491,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       if (!t) return nullval;
       auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
       if (!f) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name);
+      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
       ctx.builder.SetInsertPoint(bb);
       auto tv = val(ctx);

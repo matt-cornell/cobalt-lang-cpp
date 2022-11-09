@@ -9,6 +9,7 @@ namespace cobalt {
   struct base_context {
     varmap* vars;
     flags_t flags;
+    std::vector<std::string_view> path = {};
     base_context(varmap* vars, flags_t flags = default_flags) : vars(vars), flags(flags) {}
   };
   struct compile_context : base_context {

@@ -241,6 +241,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   std::vector<type_ptr> args_t;
   params_t.reserve(args.size());
   args_t.reserve(args.size());
+  std::vector<std::string_view> old_path;
   for (auto [_, type] : args) {
     auto t = parse_type(type);
     if (!t) {
@@ -258,6 +259,11 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
   auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);
   if (!f) return nullval;
+  if (name.front() == '.') {
+    old_path = ctx.path;
+    ctx.path = {name.substr(1)};
+  }
+  else ctx.path.push_back(name);
   auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
   auto ip = ctx.builder.GetInsertBlock();
   ctx.builder.SetInsertPoint(bb);
@@ -274,6 +280,8 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   ctx.vars = ctx.vars->parent;
   delete vars;
   ctx.builder.SetInsertPoint(ip);
+  if (name.front() == '.') std::swap(ctx.path, old_path);
+  else ctx.path.pop_back();
   return nullval;
 }
 // literals.hpp

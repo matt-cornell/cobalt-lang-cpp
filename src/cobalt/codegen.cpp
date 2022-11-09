@@ -273,6 +273,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   auto vars = ctx.vars;
   ctx.vars = ctx.vars->parent;
   delete vars;
+  ctx.builder.SetInsertPoint(ip);
   return nullval;
 }
 // literals.hpp
@@ -442,6 +443,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   }
   else {
     auto tv = val(ctx);
+    tv.value->setName(name);
     vm->insert(sstring::get(local), tv);
     return tv;
   }
@@ -495,7 +497,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
       ctx.builder.SetInsertPoint(bb);
       auto tv = val(ctx);
-      ctx.builder.CreateStore(gv, tv.value);
+      ctx.builder.CreateStore(tv.value, gv);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
@@ -504,8 +506,8 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
   }
   else {
     auto tv = val(ctx);
-    auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx));
-    ctx.builder.CreateStore(a, tv.value);
+    auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
+    ctx.builder.CreateStore(tv.value, a);
     auto type = types::reference::get(tv.type);
     vm->insert(sstring::get(local), typed_value{a, type});
     return {a, type};

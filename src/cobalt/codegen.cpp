@@ -261,6 +261,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   auto vars = ctx.vars;
   ctx.vars = ctx.vars->parent;
   delete vars;
+  ctx.builder.SetInsertPoint(ip);
   return nullval;
 }
 // literals.hpp

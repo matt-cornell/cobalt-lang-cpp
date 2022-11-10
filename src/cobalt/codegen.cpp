@@ -402,31 +402,27 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   if (name.front() == '.') while (vm->parent) vm = vm->parent;
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
-    auto local = name.substr(old + 1, idx - old - 1);
+    auto local = name.substr(old , idx - old - 1);
     auto ss = sstring::get(local);
     auto it = vm->symbols.find(ss);
-    old = idx;
-    idx = name.find('.', old);
     if (idx == std::string::npos) {
       if (it != vm->symbols.end()) ctx.flags.onerror(loc, "redefinition of " + name, ERROR);
       else break;
     }
     else {
       if (it == vm->symbols.end()) {
-        if (it->second.index() == 3) vm = std::get<3>(it->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        auto nvm = std::make_shared<varmap>(vm);
+        vm->symbols.insert({ss, symbol_type(nvm)});
+        vm = nvm.get();
       }
+      else if (it->second.index() == 3) vm = std::get<3>(it->second).get();
       else {
-        if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+        return nullval;
       }
     }
+    old = idx + 1;
+    idx = name.find('.', old);
   }
   auto local = name.substr(old);
   std::vector<std::string_view> old_path;
@@ -487,31 +483,27 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
   if (name.front() == '.') while (vm->parent) vm = vm->parent;
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
-    auto local = name.substr(old + 1, idx - old - 1);
+    auto local = name.substr(old , idx - old - 1);
     auto ss = sstring::get(local);
     auto it = vm->symbols.find(ss);
-    old = idx;
-    idx = name.find('.', old);
     if (idx == std::string::npos) {
       if (it != vm->symbols.end()) ctx.flags.onerror(loc, "redefinition of " + name, ERROR);
       else break;
     }
     else {
       if (it == vm->symbols.end()) {
-        if (it->second.index() == 3) vm = std::get<3>(it->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        auto nvm = std::make_shared<varmap>(vm);
+        vm->symbols.insert({ss, symbol_type(nvm)});
+        vm = nvm.get();
       }
+      else if (it->second.index() == 3) vm = std::get<3>(it->second).get();
       else {
-        if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+        return nullval;
       }
     }
+    old = idx + 1;
+    idx = name.find('.', old);
   }
   auto local = name.substr(old);
   std::vector<std::string_view> old_path;

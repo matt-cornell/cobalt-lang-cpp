@@ -378,17 +378,21 @@ typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {
       }
     }
     else {
-      if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
-      else {
-        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-        return nullval;
-      }
+      auto nvm = std::make_shared<varmap>(vm);
+      vm->symbols.insert({ss, symbol_type(nvm)});
+      vm = nvm.get();
     }
+  }
+  {
+    auto nvm = std::make_shared<varmap>(vm);
+    vm->symbols.insert({sstring::get(name.substr(old + 1)), symbol_type(nvm)});
+    vm = nvm.get();
   }
   std::swap(vm, ctx.vars);
   for (auto const& i : insts) i(ctx);
   if (name.front() == '.') std::swap(ctx.path, old_path);
   else ctx.path.pop_back();
+  std::swap(vm, ctx.vars);
   return nullval;
 }
 typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}

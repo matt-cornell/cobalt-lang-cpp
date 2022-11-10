@@ -570,31 +570,25 @@ typed_value cobalt::ast::varget_ast::codegen(compile_context& ctx) const {
   if (name.front() == '.') while (vm->parent) vm = vm->parent;
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
-    auto local = name.substr(old + 1, idx - old - 1);
+    auto local = name.substr(old, idx - old - 1);
     auto ptr = vm->get(sstring::get(local));
-    old = idx;
-    idx = name.find('.', old);
     if (ptr) {
       auto pidx = ptr->index();
-      if (idx == std::string::npos) {
-        if (pidx == 0) return std::get<0>(*ptr);
-        else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
-      }
-      else {
-        if (pidx == 3) vm = std::get<3>(*ptr).get();
-        else ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-      }
+      if (pidx == 3) vm = std::get<3>(*ptr).get();
+      else ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
     }
     else {
       ctx.flags.onerror(loc, name.substr(0, old) + " does not exist", ERROR);
       return nullval;
     }
+    old = idx + 1;
+    idx = name.find('.', old);
   }
-  auto ptr = vm->get(name);
+  auto ptr = vm->get(sstring::get(name.substr(old)));
   if (ptr) {
     auto idx = ptr->index();
     if (idx == 0) return std::get<0>(*ptr);
-    else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
+    else ctx.flags.onerror(loc, name + " is not a variable", ERROR);
   }
   else ctx.flags.onerror(loc, name + " does not exist", ERROR);
   return nullval;

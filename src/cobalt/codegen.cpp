@@ -276,12 +276,6 @@ std::pair<types::integer const*, bool> is_signed(type_ptr lhs, type_ptr rhs) {
 }
 static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view op, location loc, compile_context& ctx) {
   if (!lhs.type) return nullval;
-  if (op == "&&") {
-    return nullval;
-  }
-  if (op == "||") {
-    return nullval;
-  }
   if (!rhs.type) return nullval;
   switch (lhs.type->kind) {
     case INTEGER: switch (rhs.type->kind) {
@@ -770,6 +764,70 @@ typed_value cobalt::ast::cast_ast::codegen(compile_context& ctx) const {
   return {v, t};
 }
 typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
+  if (std::string_view(op) == "&&") {
+    auto l = lhs(ctx);
+    if (!l.type) return nullval;
+    auto f = ctx.builder.GetInsertBlock()->getParent();
+    auto 
+      if_true = llvm::BasicBlock::Create(*ctx.context, "if_true", f), 
+      if_false = llvm::BasicBlock::Create(*ctx.context, "if_false"), 
+      merge = llvm::BasicBlock::Create(*ctx.context, "merge");
+    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
+    ctx.builder.CreateCondBr(v, if_true, if_false);
+    ctx.builder.SetInsertPoint(if_true);
+    auto itv = rhs(ctx);
+    while (itv.type->kind == REFERENCE) {
+      auto t = static_cast<types::reference const*>(itv.type)->base;
+      itv.value = ctx.builder.CreateLoad(t->llvm_type(loc, ctx), itv.value);
+      itv.type = t;
+    }
+    auto llt = itv.type->llvm_type(loc, ctx);
+    ctx.builder.CreateBr(merge);
+    if_true = ctx.builder.GetInsertBlock();
+    f->getBasicBlockList().push_back(if_false);
+    ctx.builder.SetInsertPoint(if_false);
+    auto ifv = llvm::Constant::getNullValue(llt);
+    ctx.builder.CreateBr(merge);
+    if_false = ctx.builder.GetInsertBlock();
+    f->getBasicBlockList().push_back(merge);
+    ctx.builder.SetInsertPoint(merge);
+    auto pn = ctx.builder.CreatePHI(llt, 2);
+    pn->addIncoming(itv.value, if_true);
+    pn->addIncoming(ifv, if_false);
+    return {pn, itv.type};
+  }
+  if (std::string_view(op) == "||") {
+    auto l = lhs(ctx);
+    if (!l.type) return nullval;
+    auto f = ctx.builder.GetInsertBlock()->getParent();
+    auto 
+      if_true = llvm::BasicBlock::Create(*ctx.context, "if_true"), 
+      if_false = llvm::BasicBlock::Create(*ctx.context, "if_false", f), 
+      merge = llvm::BasicBlock::Create(*ctx.context, "merge");
+    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
+    ctx.builder.CreateCondBr(v, if_true, if_false);
+    ctx.builder.SetInsertPoint(if_false);
+    auto ifv = rhs(ctx);
+    while (ifv.type->kind == REFERENCE) {
+      auto t = static_cast<types::reference const*>(ifv.type)->base;
+      ifv.value = ctx.builder.CreateLoad(t->llvm_type(loc, ctx), ifv.value);
+      ifv.type = t;
+    }
+    auto llt = ifv.type->llvm_type(loc, ctx);
+    ctx.builder.CreateBr(merge);
+    if_false = ctx.builder.GetInsertBlock();
+    f->getBasicBlockList().push_back(if_true);
+    ctx.builder.SetInsertPoint(if_true);
+    auto itv = llvm::Constant::getAllOnesValue(llt);
+    ctx.builder.CreateBr(merge);
+    if_true = ctx.builder.GetInsertBlock();
+    f->getBasicBlockList().push_back(merge);
+    ctx.builder.SetInsertPoint(merge);
+    auto pn = ctx.builder.CreatePHI(llt, 2);
+    pn->addIncoming(itv, if_true);
+    pn->addIncoming(ifv.value, if_false);
+    return {pn, ifv.type};
+  }
   auto ltv = lhs(ctx), rtv = rhs(ctx);
   auto tv = binary_op(ltv, rtv, op, loc, ctx);
   if (tv.value && tv.type) return tv;

@@ -264,6 +264,249 @@ static typed_value unary_op(typed_value tv, std::string_view op, location loc, c
     case CUSTOM: return nullval;
   }
 }
+std::pair<types::integer const*, bool> is_signed(type_ptr lhs, type_ptr rhs) {
+  auto l = static_cast<types::integer const*>(lhs), r = static_cast<types::integer const*>(rhs);
+  switch ((int(l->nbits < 0) << 1) | int(r->nbits < 0)) {
+    case 0: return {l->nbits > r->nbits ? l : r, true};
+    case 1: return {-l->nbits > r->nbits ? l : r, true};
+    case 2: return {l->nbits > -r->nbits ? l : r, true};
+    case 3: return {l->nbits < r->nbits ? l : r, false};
+  }
+  return {nullptr, false}; // unreachable
+}
+static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view op, location loc, compile_context& ctx) {
+  if (!lhs.type) return nullval;
+  if (op == "&&") {
+    return nullval;
+  }
+  if (op == "||") {
+    return nullval;
+  }
+  if (!rhs.type) return nullval;
+  switch (lhs.type->kind) {
+    case INTEGER: switch (rhs.type->kind) {
+      case INTEGER:
+      case FLOAT: return nullval;
+      case POINTER:
+      case REFERENCE: {
+        auto t = static_cast<types::reference const*>(lhs.type)->base;
+        return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
+      }
+      case CUSTOM: return nullval;
+    }
+    case FLOAT: switch (rhs.type->kind) {
+      case INTEGER: return nullval;
+      case FLOAT: return nullval;
+      case POINTER: return nullval;
+      case REFERENCE: {
+        auto t = static_cast<types::reference const*>(lhs.type)->base;
+        return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
+      }
+      case CUSTOM: return nullval;
+    }
+    case POINTER: switch (rhs.type->kind) {
+      case INTEGER:
+      case FLOAT: return nullval;
+      case POINTER:
+      case REFERENCE: {
+        auto t = static_cast<types::reference const*>(lhs.type)->base;
+        return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
+      }
+      case CUSTOM: return nullval;
+    }
+    case REFERENCE: {
+      auto t = static_cast<types::reference const*>(lhs.type)->base;
+      switch (t->kind) {
+        case INTEGER:
+          if (op == "=") {
+            auto v = impl_convert(rhs.value, rhs.type, t, loc, ctx);
+            if (!v) return nullval;
+            return {ctx.builder.CreateStore(v, lhs.value), lhs.type};
+          }
+          if (op == "+=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateAdd(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "-=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateSub(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "*=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateMul(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "/=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto [_, s] = is_signed(lhs.type, rhs.type);
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = s ? ctx.builder.CreateSDiv(v1, llvm::ConstantInt::get(t2, 1)) : ctx.builder.CreateUDiv(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "%=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto [_, s] = is_signed(lhs.type, rhs.type);
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = s ? ctx.builder.CreateSRem(v1, llvm::ConstantInt::get(t2, 1)) : ctx.builder.CreateURem(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "&=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateAnd(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "|=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateOr(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "^=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateXor(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "<<=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateShl(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == ">>=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateLShr(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          break;
+        case FLOAT:
+          if (op == "=") {
+            auto v = impl_convert(rhs.value, rhs.type, t, loc, ctx);
+            if (!v) return nullval;
+            return {ctx.builder.CreateStore(v, lhs.value), lhs.type};
+          }
+          if (op == "+=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateFAdd(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "-=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateFSub(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "*=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateFMul(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "/=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateFDiv(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          if (op == "%=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateFRem(v1, llvm::ConstantInt::get(t2, 1));
+            auto v3 = ctx.builder.CreateStore(v2, lhs.value);
+            return {v3, lhs.type};
+          }
+          break;
+        case POINTER:
+          if (op == "=") {
+            auto v = impl_convert(rhs.value, rhs.type, t, loc, ctx);
+            if (!v) return nullval;
+            return {ctx.builder.CreateStore(v, lhs.value), lhs.type};
+          }
+          if (op == "+=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+            auto v0 = impl_convert(rhs.value, rhs.type, types::integer::get(sizeof(void*) * 8), loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateBitCast(v1, t3);
+            auto v3 = ctx.builder.CreateAdd(v2, v0);
+            auto v4 = ctx.builder.CreateBitCast(v1, t2);
+            auto v5 = ctx.builder.CreateStore(v4, lhs.value);
+            return {v5, lhs.type};
+          }
+          if (op == "-=") {
+            auto t2 = t->llvm_type(loc, ctx);
+            auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+            auto v0 = impl_convert(rhs.value, rhs.type, types::integer::get(sizeof(void*) * 8), loc, ctx);
+            if (!v0) return nullval;
+            auto v1 = ctx.builder.CreateLoad(t2, lhs.value);
+            auto v2 = ctx.builder.CreateBitCast(v1, t3);
+            auto v3 = ctx.builder.CreateSub(v2, v0);
+            auto v4 = ctx.builder.CreateBitCast(v1, t2);
+            auto v5 = ctx.builder.CreateStore(v4, lhs.value);
+            return {v5, lhs.type};
+          }
+          break;
+        case REFERENCE: break;
+        case CUSTOM: break;
+      }
+      return binary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), lhs.value), t}, rhs, op, loc, ctx);
+    }
+    case CUSTOM: return nullval;
+  }
+}
 // flow.hpp
 typed_value cobalt::ast::top_level_ast::codegen(compile_context& ctx) const {
   for (auto const& ast : insts) ast(ctx);
@@ -301,7 +544,18 @@ typed_value cobalt::ast::cast_ast::codegen(compile_context& ctx) const {
   }
   return {v, t};
 }
-typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
+  auto ltv = lhs(ctx), rtv = rhs(ctx);
+  auto tv = binary_op(ltv, rtv, op, loc, ctx);
+  if (tv.value && tv.type) return tv;
+  switch ((int(bool(ltv.type)) << 1) | int(bool(rtv.type))) {
+    case 0: ctx.flags.onerror(loc, (llvm::Twine("invalid operator ") + op + " for values of types <error> and <error>").str(), ERROR); break;
+    case 1: ctx.flags.onerror(loc, (llvm::Twine("invalid operator ") + op + " for values of types <error> and '" + rtv.type->name() + "'").str(), ERROR); break;
+    case 2: ctx.flags.onerror(loc, (llvm::Twine("invalid operator ") + op + " for values of types '" + ltv.type->name() + "' and <error>").str(), ERROR); break;
+    case 3: ctx.flags.onerror(loc, (llvm::Twine("invlaid operator ") + op + " for values of types '" + ltv.type->name() + "' and '" + rtv.type->name() + "'").str(), ERROR); break;
+  }
+  return nullval;
+}
 typed_value cobalt::ast::unop_ast::codegen(compile_context& ctx) const {
   auto tv = val(ctx);
   auto v2 = unary_op(tv, op, loc, ctx);

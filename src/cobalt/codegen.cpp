@@ -286,8 +286,154 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
   switch (lhs.type->kind) {
     case INTEGER: switch (rhs.type->kind) {
       case INTEGER:
-      case FLOAT: return nullval;
+        if (op == "+") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateAdd(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateAdd(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateAdd(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateAdd(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "-") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateSub(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateSub(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateSub(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateSub(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "*") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateMul(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateMul(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateMul(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateMul(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "/") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateSDiv(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateSDiv(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateSDiv(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateUDiv(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "%") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateSRem(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateSRem(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateSRem(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateURem(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "&") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateAnd(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateAnd(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateAnd(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateAnd(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "|") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateOr(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateOr(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateOr(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateOr(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "^") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateXor(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateXor(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateXor(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateXor(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == "<<") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateShl(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateShl(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateShl(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateShl(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        if (op == ">>") {
+          auto lb = static_cast<types::integer const*>(lhs.type)->nbits, rb = static_cast<types::integer const*>(rhs.type)->nbits;
+          switch ((int(lb < 0) << 1) | int(rb < 0)) {
+            case 0: return {ctx.builder.CreateLShr(lhs.value, rhs.value), lb > rb ? lhs.type : rhs.type};
+            case 1: return {ctx.builder.CreateLShr(lhs.value, rhs.value), lb > -rb ? lhs.type : rhs.type};
+            case 2: return {ctx.builder.CreateLShr(lhs.value, rhs.value), -lb > rb ? lhs.type : rhs.type};
+            case 3: return {ctx.builder.CreateLShr(lhs.value, rhs.value), lb < rb ? lhs.type : rhs.type};
+          }
+          return nullval; // unreachable
+        }
+        return nullval;
+      case FLOAT:
+        if (op == "+") {
+          auto v0 = impl_convert(lhs.value, lhs.type, rhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFAdd(v0, rhs.value);
+          return {v1, rhs.type};
+        }
+        if (op == "-") {
+          auto v0 = impl_convert(lhs.value, lhs.type, rhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFSub(v0, rhs.value);
+          return {v1, rhs.type};
+        }
+        if (op == "*") {
+          auto v0 = impl_convert(lhs.value, lhs.type, rhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFMul(v0, rhs.value);
+          return {v1, rhs.type};
+        }
+        if (op == "/") {
+          auto v0 = impl_convert(lhs.value, lhs.type, rhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFDiv(v0, rhs.value);
+          return {v1, rhs.type};
+        }
+        if (op == "%") {
+          auto v0 = impl_convert(lhs.value, lhs.type, rhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFRem(v0, rhs.value);
+          return {v1, rhs.type};
+        }
+        return nullval;
       case POINTER:
+        if (op == "+") {
+          auto t2 = rhs.type->llvm_type(loc, ctx);
+          auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+          auto v0 = impl_convert(lhs.value, lhs.type, types::integer::get(sizeof(void*) * 8), loc, ctx);
+          auto v1 = ctx.builder.CreateBitCast(rhs.value, t3);
+          auto v2 = ctx.builder.CreateAdd(v1, v0);
+          auto v3 = ctx.builder.CreateBitCast(v2, t2);
+          return {v3, rhs.type};
+        }
+        if (op == "-") {
+          auto t2 = rhs.type->llvm_type(loc, ctx);
+          auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+          auto v0 = impl_convert(lhs.value, lhs.type, types::integer::get(sizeof(void*) * 8), loc, ctx);
+          auto v1 = ctx.builder.CreateBitCast(rhs.value, t3);
+          auto v2 = ctx.builder.CreateSub(v1, v0);
+          auto v3 = ctx.builder.CreateBitCast(v2, t2);
+          return {v3, rhs.type};
+        }
+        return nullval;
       case REFERENCE: {
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
@@ -295,8 +441,60 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
       case CUSTOM: return nullval;
     }
     case FLOAT: switch (rhs.type->kind) {
-      case INTEGER: return nullval;
-      case FLOAT: return nullval;
+      case INTEGER:
+        if (op == "+") {
+          auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFAdd(lhs.value, v0);
+          return {v1, lhs.type};
+        }
+        if (op == "-") {
+          auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFSub(lhs.value, v0);
+          return {v1, lhs.type};
+        }
+        if (op == "*") {
+          auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFMul(lhs.value, v0);
+          return {v1, lhs.type};
+        }
+        if (op == "/") {
+          auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFDiv(lhs.value, v0);
+          return {v1, lhs.type};
+        }
+        if (op == "%") {
+          auto v0 = impl_convert(rhs.value, rhs.type, lhs.type, loc, ctx);
+          auto v1 = ctx.builder.CreateFRem(lhs.value, v0);
+          return {v1, lhs.type};
+        }
+        return nullval;
+      case FLOAT:
+        if (op == "+") {
+          if (lhs.type->size() > rhs.type->size()) return {ctx.builder.CreateFAdd(lhs.value, ctx.builder.CreateFPExt(rhs.value, lhs.type->llvm_type(loc, ctx))), lhs.type};
+          else if (lhs.type->size() < rhs.type->size()) return {ctx.builder.CreateFAdd(ctx.builder.CreateFPExt(lhs.value, rhs.type->llvm_type(loc, ctx)), rhs.value), rhs.type};
+          else return {ctx.builder.CreateFAdd(lhs.value, rhs.value), lhs.type};
+        }
+        if (op == "-") {
+          if (lhs.type->size() > rhs.type->size()) return {ctx.builder.CreateFSub(lhs.value, ctx.builder.CreateFPExt(rhs.value, lhs.type->llvm_type(loc, ctx))), lhs.type};
+          else if (lhs.type->size() < rhs.type->size()) return {ctx.builder.CreateFSub(ctx.builder.CreateFPExt(lhs.value, rhs.type->llvm_type(loc, ctx)), rhs.value), rhs.type};
+          else return {ctx.builder.CreateFSub(lhs.value, rhs.value), lhs.type};
+        }
+        if (op == "*") {
+          if (lhs.type->size() > rhs.type->size()) return {ctx.builder.CreateFMul(lhs.value, ctx.builder.CreateFPExt(rhs.value, lhs.type->llvm_type(loc, ctx))), lhs.type};
+          else if (lhs.type->size() < rhs.type->size()) return {ctx.builder.CreateFMul(ctx.builder.CreateFPExt(lhs.value, rhs.type->llvm_type(loc, ctx)), rhs.value), rhs.type};
+          else return {ctx.builder.CreateFMul(lhs.value, rhs.value), lhs.type};
+        }
+        if (op == "/") {
+          if (lhs.type->size() > rhs.type->size()) return {ctx.builder.CreateFDiv(lhs.value, ctx.builder.CreateFPExt(rhs.value, lhs.type->llvm_type(loc, ctx))), lhs.type};
+          else if (lhs.type->size() < rhs.type->size()) return {ctx.builder.CreateFDiv(ctx.builder.CreateFPExt(lhs.value, rhs.type->llvm_type(loc, ctx)), rhs.value), rhs.type};
+          else return {ctx.builder.CreateFDiv(lhs.value, rhs.value), lhs.type};
+        }
+        if (op == "%") {
+          if (lhs.type->size() > rhs.type->size()) return {ctx.builder.CreateFRem(lhs.value, ctx.builder.CreateFPExt(rhs.value, lhs.type->llvm_type(loc, ctx))), lhs.type};
+          else if (lhs.type->size() < rhs.type->size()) return {ctx.builder.CreateFRem(ctx.builder.CreateFPExt(lhs.value, rhs.type->llvm_type(loc, ctx)), rhs.value), rhs.type};
+          else return {ctx.builder.CreateFRem(lhs.value, rhs.value), lhs.type};
+        }
+        return nullval;
       case POINTER: return nullval;
       case REFERENCE: {
         auto t = static_cast<types::reference const*>(lhs.type)->base;
@@ -306,8 +504,35 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
     }
     case POINTER: switch (rhs.type->kind) {
       case INTEGER:
+        if (op == "+") {
+          auto t2 = lhs.type->llvm_type(loc, ctx);
+          auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+          auto v0 = impl_convert(rhs.value, rhs.type, types::integer::get(sizeof(void*) * 8), loc, ctx);
+          auto v1 = ctx.builder.CreateBitCast(lhs.value, t3);
+          auto v2 = ctx.builder.CreateAdd(v1, v0);
+          auto v3 = ctx.builder.CreateBitCast(v2, t2);
+          return {v3, lhs.type};
+        }
+        if (op == "-") {
+          auto t2 = lhs.type->llvm_type(loc, ctx);
+          auto t3 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+          auto v0 = impl_convert(rhs.value, rhs.type, types::integer::get(sizeof(void*) * 8), loc, ctx);
+          auto v1 = ctx.builder.CreateBitCast(lhs.value, t3);
+          auto v2 = ctx.builder.CreateSub(v1, v0);
+          auto v3 = ctx.builder.CreateBitCast(v2, t2);
+          return {v3, lhs.type};
+        }
+        return nullval;
       case FLOAT: return nullval;
       case POINTER:
+        if (op == "-") {
+          auto t2 = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+          auto v1 = ctx.builder.CreateBitCast(lhs.value, t2);
+          auto v2 = ctx.builder.CreateBitCast(rhs.value, t2);
+          auto v3 = ctx.builder.CreateSub(v1, v2);
+          return {v3, types::integer::get(sizeof(void*) * 8)};
+        }
+        return nullval;
       case REFERENCE: {
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);

@@ -726,6 +726,18 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
     case CUSTOM: return nullval;
   }
 }
+static std::string concat(std::vector<std::string_view> const& vals, std::string_view other) {
+  std::size_t sz = other.size() + vals.size();
+  for (auto val : vals) sz += val.size();
+  std::string out;
+  out.reserve(sz);
+  for (auto val : vals) {
+    out += val;
+    out.push_back('.');
+  }
+  out += other;
+  return out;
+}
 // flow.hpp
 typed_value cobalt::ast::top_level_ast::codegen(compile_context& ctx) const {
   for (auto const& ast : insts) ast(ctx);
@@ -860,6 +872,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   std::vector<type_ptr> args_t;
   params_t.reserve(args.size());
   args_t.reserve(args.size());
+  std::vector<std::string_view> old_path;
   for (auto [_, type] : args) {
     auto t = parse_type(type);
     if (!t) {
@@ -875,8 +888,13 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     return nullval;
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, *ctx.module);
+  auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);
   if (!f) return nullval;
+  if (name.front() == '.') {
+    old_path = ctx.path;
+    ctx.path = {name.substr(1)};
+  }
+  else ctx.path.push_back(name);
   auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
   auto ip = ctx.builder.GetInsertBlock();
   ctx.builder.SetInsertPoint(bb);
@@ -893,6 +911,8 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   ctx.vars = ctx.vars->parent;
   delete vars;
   ctx.builder.SetInsertPoint(ip);
+  if (name.front() == '.') std::swap(ctx.path, old_path);
+  else ctx.path.pop_back();
   return nullval;
 }
 // literals.hpp
@@ -965,11 +985,14 @@ typed_value cobalt::ast::char_ast::codegen(compile_context& ctx) const {
   return {llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctx.context), out), types::integer::get(32)};
 }
 // scope.hpp
-typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
-typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
-// vars.hpp
-typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
-  varmap* vm = ctx.vars;
+typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {
+  auto vm = ctx.vars;
+  std::vector<std::string_view> old_path;
+  if (name.front() == '.') {
+    old_path = ctx.path;
+    ctx.path = {name.substr(1)};
+  }
+  else ctx.path.push_back(name);
   if (name.front() == '.') while (vm->parent) vm = vm->parent;
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
@@ -978,32 +1001,120 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     auto it = vm->symbols.find(ss);
     old = idx;
     idx = name.find('.', old);
+    if (it == vm->symbols.end()) {
+      if (it->second.index() == 3) vm = std::get<3>(it->second).get();
+      else {
+        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+        return nullval;
+      }
+    }
+    else {
+      auto nvm = std::make_shared<varmap>(vm);
+      vm->symbols.insert({ss, symbol_type(nvm)});
+      vm = nvm.get();
+    }
+  }
+  {
+    auto nvm = std::make_shared<varmap>(vm);
+    vm->symbols.insert({sstring::get(name.substr(old + 1)), symbol_type(nvm)});
+    vm = nvm.get();
+  }
+  std::swap(vm, ctx.vars);
+  for (auto const& i : insts) i(ctx);
+  if (name.front() == '.') std::swap(ctx.path, old_path);
+  else ctx.path.pop_back();
+  std::swap(vm, ctx.vars);
+  return nullval;
+}
+typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {
+  {
+    auto i1 = path.rfind('*'), i2 = path.rfind('.');
+    if (i1 != std::string::npos && i2 != std::string::npos && i1 < i2) {
+      ctx.flags.onerror(loc, "globbing expressions cannot be used in the middle of an import statement", ERROR);
+      return nullval;
+    }
+  }
+  varmap* vm = ctx.vars;
+  if (path.front() == '.') while (vm->parent) vm = vm->parent;
+  std::size_t old = path.front() == '.', idx = path.find('.', 1);
+  while (idx != std::string::npos) {
+    auto local = path.substr(old, idx - old - 1);
+    auto ptr = vm->get(sstring::get(local));
+    if (ptr) {
+      auto pidx = ptr->index();
+      if (pidx == 3) vm = std::get<3>(*ptr).get();
+      else ctx.flags.onerror(loc, path.substr(0, idx) + " is not a module", ERROR);
+    }
+    else {
+      ctx.flags.onerror(loc, path.substr(0, old) + " does not exist", ERROR);
+      return nullval;
+    }
+    old = idx + 1;
+    idx = path.find('.', old);
+  }
+  if (path.substr(old) == "*") {
+    auto res = ctx.vars->include(vm);
+    for (auto const& sym : res) ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + sym + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
+    return nullval;
+  }
+  auto ss = sstring::get(path.substr(old));
+  auto ptr = vm->get(ss);
+  if (!ptr) {
+    ctx.flags.onerror(loc, path + " does not exist", ERROR);
+    return nullval;
+  }
+  auto [it, succ] = ctx.vars->symbols.insert({ss, *ptr});
+  if (!succ) {
+    if (ptr->index() == it->second.index()) switch (ptr->index()) {
+      case 1: std::get<1>(it->second)->merge(*std::get<1>(*ptr));
+      case 3: std::get<3>(it->second)->include(std::get<3>(*ptr).get());
+      default: ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + ss + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
+    }
+    else ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + ss + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
+  }
+  return nullval;
+}
+// vars.hpp
+typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
+  varmap* vm = ctx.vars;
+  if (name.front() == '.') while (vm->parent) vm = vm->parent;
+  std::size_t old = name.front() == '.', idx = name.find('.', 1);
+  while (idx != std::string::npos) {
+    auto local = name.substr(old , idx - old - 1);
+    auto ss = sstring::get(local);
+    auto it = vm->symbols.find(ss);
     if (idx == std::string::npos) {
       if (it != vm->symbols.end()) ctx.flags.onerror(loc, "redefinition of " + name, ERROR);
       else break;
     }
     else {
       if (it == vm->symbols.end()) {
-        if (it->second.index() == 3) vm = std::get<3>(it->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        auto nvm = std::make_shared<varmap>(vm);
+        vm->symbols.insert({ss, symbol_type(nvm)});
+        vm = nvm.get();
       }
+      else if (it->second.index() == 3) vm = std::get<3>(it->second).get();
       else {
-        if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+        return nullval;
       }
     }
+    old = idx + 1;
+    idx = name.find('.', old);
   }
   auto local = name.substr(old);
+  std::vector<std::string_view> old_path;
   if (global) {
     if (val.is_const()) {
+      if (name.front() == '.') {
+        old_path = ctx.path;
+        ctx.path = {name.substr(1)};
+      }
+      else ctx.path.push_back(name);
       auto tv = val(ctx);
-      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
+      if (name.front() == '.') std::swap(ctx.path, old_path);
+      else ctx.path.pop_back();
+      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto type = types::reference::get(tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
@@ -1013,10 +1124,17 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       if (!t) return nullval;
       auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
       if (!f) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name);
+      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      if (name.front() == '.') {
+        old_path = ctx.path;
+        ctx.path = {name.substr(1)};
+      }
+      else ctx.path.push_back(name);
       auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
       ctx.builder.SetInsertPoint(bb);
       auto tv = val(ctx);
+      if (name.front() == '.') std::swap(ctx.path, old_path);
+      else ctx.path.pop_back();
       ctx.builder.CreateStore(gv, tv.value);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(tv.type);
@@ -1025,7 +1143,14 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     }
   }
   else {
+    if (name.front() == '.') {
+      old_path = ctx.path;
+      ctx.path = {name.substr(1)};
+    }
+    else ctx.path.push_back(name);
     auto tv = val(ctx);
+    if (name.front() == '.') std::swap(ctx.path, old_path);
+    else ctx.path.pop_back();
     tv.value->setName(name);
     vm->insert(sstring::get(local), tv);
     return tv;
@@ -1036,37 +1161,41 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
   if (name.front() == '.') while (vm->parent) vm = vm->parent;
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
-    auto local = name.substr(old + 1, idx - old - 1);
+    auto local = name.substr(old , idx - old - 1);
     auto ss = sstring::get(local);
     auto it = vm->symbols.find(ss);
-    old = idx;
-    idx = name.find('.', old);
     if (idx == std::string::npos) {
       if (it != vm->symbols.end()) ctx.flags.onerror(loc, "redefinition of " + name, ERROR);
       else break;
     }
     else {
       if (it == vm->symbols.end()) {
-        if (it->second.index() == 3) vm = std::get<3>(it->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        auto nvm = std::make_shared<varmap>(vm);
+        vm->symbols.insert({ss, symbol_type(nvm)});
+        vm = nvm.get();
       }
+      else if (it->second.index() == 3) vm = std::get<3>(it->second).get();
       else {
-        if (it->second.index() == 3) vm = std::get<3>(vm->symbols.insert({ss, symbol_type(std::make_shared<varmap>(std::get<3>(it->second).get()))}).first->second).get();
-        else {
-          ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-          return nullval;
-        }
+        ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
+        return nullval;
       }
     }
+    old = idx + 1;
+    idx = name.find('.', old);
   }
   auto local = name.substr(old);
+  std::vector<std::string_view> old_path;
   if (global) {
     if (val.is_const()) {
+      if (name.front() == '.') {
+        old_path = ctx.path;
+        ctx.path = {name.substr(1)};
+      }
+      else ctx.path.push_back(name);
       auto tv = val(ctx);
-      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name);
+      if (name.front() == '.') std::swap(ctx.path, old_path);
+      else ctx.path.pop_back();
+      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto type = types::reference::get(tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
@@ -1076,10 +1205,17 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       if (!t) return nullval;
       auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
       if (!f) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name);
+      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
       ctx.builder.SetInsertPoint(bb);
+      if (name.front() == '.') {
+        old_path = ctx.path;
+        ctx.path = {name.substr(1)};
+      }
+      else ctx.path.push_back(name);
       auto tv = val(ctx);
+      if (name.front() == '.') std::swap(ctx.path, old_path);
+      else ctx.path.pop_back();
       ctx.builder.CreateStore(tv.value, gv);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(tv.type);
@@ -1088,7 +1224,14 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
     }
   }
   else {
+    if (name.front() == '.') {
+      old_path = ctx.path;
+      ctx.path = {name.substr(1)};
+    }
+    else ctx.path.push_back(name);
     auto tv = val(ctx);
+    if (name.front() == '.') std::swap(ctx.path, old_path);
+    else ctx.path.pop_back();
     auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
     ctx.builder.CreateStore(tv.value, a);
     auto type = types::reference::get(tv.type);
@@ -1101,31 +1244,25 @@ typed_value cobalt::ast::varget_ast::codegen(compile_context& ctx) const {
   if (name.front() == '.') while (vm->parent) vm = vm->parent;
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
-    auto local = name.substr(old + 1, idx - old - 1);
+    auto local = name.substr(old, idx - old - 1);
     auto ptr = vm->get(sstring::get(local));
-    old = idx;
-    idx = name.find('.', old);
     if (ptr) {
       auto pidx = ptr->index();
-      if (idx == std::string::npos) {
-        if (pidx == 0) return std::get<0>(*ptr);
-        else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
-      }
-      else {
-        if (pidx == 3) vm = std::get<3>(*ptr).get();
-        else ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
-      }
+      if (pidx == 3) vm = std::get<3>(*ptr).get();
+      else ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
     }
     else {
       ctx.flags.onerror(loc, name.substr(0, old) + " does not exist", ERROR);
       return nullval;
     }
+    old = idx + 1;
+    idx = name.find('.', old);
   }
-  auto ptr = vm->get(name);
+  auto ptr = vm->get(sstring::get(name.substr(old)));
   if (ptr) {
     auto idx = ptr->index();
     if (idx == 0) return std::get<0>(*ptr);
-    else ctx.flags.onerror(loc, name.substr(0, old) + " is not a variable", ERROR);
+    else ctx.flags.onerror(loc, name + " is not a variable", ERROR);
   }
   else ctx.flags.onerror(loc, name + " does not exist", ERROR);
   return nullval;

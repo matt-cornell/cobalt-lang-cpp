@@ -1114,6 +1114,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       auto tv = val(ctx);
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
+      if (!tv.type) return nullval;
       auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto type = types::reference::get(tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
@@ -1135,6 +1136,11 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       auto tv = val(ctx);
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
+      if (!tv.type) {
+        f->eraseFromParent();
+        gv->eraseFromParent();
+        return nullval;
+      }
       ctx.builder.CreateStore(gv, tv.value);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(tv.type);
@@ -1151,6 +1157,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     auto tv = val(ctx);
     if (name.front() == '.') std::swap(ctx.path, old_path);
     else ctx.path.pop_back();
+    if (!tv.type) return nullval;
     tv.value->setName(name);
     vm->insert(sstring::get(local), tv);
     return tv;
@@ -1195,6 +1202,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       auto tv = val(ctx);
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
+      if (!tv.type) return nullval;
       auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto type = types::reference::get(tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
@@ -1216,6 +1224,11 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       auto tv = val(ctx);
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
+      if (!tv.type) {
+        f->eraseFromParent();
+        gv->eraseFromParent();
+        return nullval;
+      }
       ctx.builder.CreateStore(tv.value, gv);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(tv.type);
@@ -1232,6 +1245,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
     auto tv = val(ctx);
     if (name.front() == '.') std::swap(ctx.path, old_path);
     else ctx.path.pop_back();
+    if (!tv.type) return nullval;
     auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
     ctx.builder.CreateStore(tv.value, a);
     auto type = types::reference::get(tv.type);

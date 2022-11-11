@@ -1,6 +1,5 @@
 #include "cobalt/tokenizer.hpp"
 #include <cmath>
-#include <numbers>
 #include <optional>
 #include <llvm/ADT/APInt.h>
 #if __cplusplus >= 202002
@@ -125,7 +124,7 @@ static bool is_hex(char32_t c) {
 }
 template <class I> static std::string parse_num(I& it, I end, bound_handler const& onerror, borrow_function<char32_t(char32_t)> step) {
   uint32_t decimal_places = 0;
-  constexpr double log2_10 = std::numbers::ln10_v<double> / std::numbers::ln2_v<double>;
+  constexpr double log2_10 = 3.32192809;
   llvm::APInt int_part;
   double float_part = 0;
   double bits = 0;

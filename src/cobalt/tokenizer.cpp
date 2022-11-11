@@ -490,7 +490,7 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
   std::string_view macro_id;
   std::string args;
   if (estate == PAREN) {
-    macro_id = std::string_view{start, it - 1};
+    macro_id = std::string_view{start, static_cast<std::size_t>(it - start) + 1};
     start = it;
     std::size_t depth = 1;
     while (depth && advance(it, end, c)) {
@@ -540,7 +540,7 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
     }
     args.append(start, it - 1);
   }
-  else macro_id = std::string_view{start, --it};
+  else macro_id = std::string_view{start, static_cast<std::size_t>(--it - start)};
   if (macro_id == "define") { // @define needs to be specially defined because it adds a macro
     flags.onerror(loc, "macro definition is not yet supported", CRITICAL);
     return std::nullopt;
@@ -988,7 +988,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
               return out;
             }
             auto it2 = code.begin() + idx;
-            std::string_view comment(it, it2);
+            std::string_view comment(it, it2 - it);
             it = it2 + count + 1;
             it2 = comment.begin();
             while (advance(it2, comment.end(), c)) step(c);

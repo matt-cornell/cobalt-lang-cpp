@@ -395,7 +395,54 @@ typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {
   std::swap(vm, ctx.vars);
   return nullval;
 }
-typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {
+  {
+    auto i1 = path.rfind('*'), i2 = path.rfind('.');
+    if (i1 != std::string::npos && i2 != std::string::npos && i1 < i2) {
+      ctx.flags.onerror(loc, "globbing expressions cannot be used in the middle of an import statement", ERROR);
+      return nullval;
+    }
+  }
+  varmap* vm = ctx.vars;
+  if (path.front() == '.') while (vm->parent) vm = vm->parent;
+  std::size_t old = path.front() == '.', idx = path.find('.', 1);
+  while (idx != std::string::npos) {
+    auto local = path.substr(old, idx - old - 1);
+    auto ptr = vm->get(sstring::get(local));
+    if (ptr) {
+      auto pidx = ptr->index();
+      if (pidx == 3) vm = std::get<3>(*ptr).get();
+      else ctx.flags.onerror(loc, path.substr(0, idx) + " is not a module", ERROR);
+    }
+    else {
+      ctx.flags.onerror(loc, path.substr(0, old) + " does not exist", ERROR);
+      return nullval;
+    }
+    old = idx + 1;
+    idx = path.find('.', old);
+  }
+  if (path.substr(old) == "*") {
+    auto res = ctx.vars->include(vm);
+    for (auto const& sym : res) ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + sym + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
+    return nullval;
+  }
+  auto ss = sstring::get(path.substr(old));
+  auto ptr = vm->get(ss);
+  if (!ptr) {
+    ctx.flags.onerror(loc, path + " does not exist", ERROR);
+    return nullval;
+  }
+  auto [it, succ] = ctx.vars->symbols.insert({ss, *ptr});
+  if (!succ) {
+    if (ptr->index() == it->second.index()) switch (ptr->index()) {
+      case 1: std::get<1>(it->second)->merge(*std::get<1>(*ptr));
+      case 3: std::get<3>(it->second)->include(std::get<3>(*ptr).get());
+      default: ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + ss + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
+    }
+    else ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + ss + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
+  }
+  return nullval;
+}
 // vars.hpp
 typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   varmap* vm = ctx.vars;

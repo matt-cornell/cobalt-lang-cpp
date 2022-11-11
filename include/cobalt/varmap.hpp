@@ -52,7 +52,11 @@ namespace cobalt {
         for (auto [name, sym] : other->symbols) {
           auto [it, succ] = symbols.insert({name, sym});
           if (!succ) {
-            if (sym.index() == 1 && it->second.index() == 1) std::get<1>(it->second)->merge(*std::get<1>(sym));
+            if (sym.index() == it->second.index()) switch (sym.index()) {
+              case 1: std::get<1>(it->second)->merge(*std::get<1>(sym));
+              case 3: std::get<3>(it->second)->include(std::get<3>(sym).get());
+              default: out.insert(name);
+            }
             else out.insert(name);
           }
         }

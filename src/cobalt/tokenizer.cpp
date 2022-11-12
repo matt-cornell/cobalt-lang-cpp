@@ -396,9 +396,9 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   std::string out;
   if (decimal_places) {
     float_part += int_part.trunc(llvm::APInt::APINT_WORD_SIZE).getZExtValue();
-    out.resize(sizeof(double) + 2);
+    out.resize(sizeof(double) + 1);
     out[0] = '1';
-    std::memcpy(out.data() + 2, &float_part, sizeof(double));
+    std::memcpy(out.data() + 1, &float_part, sizeof(double));
   }
   else {
     out.resize(int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE + 2);

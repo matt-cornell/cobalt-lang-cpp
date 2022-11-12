@@ -2,7 +2,7 @@
 #include "cobalt/types.hpp"
 using namespace cobalt;
 using enum types::type_base::kind_t;
-const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize");
+const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool");
 type_ptr get_call(type_ptr t, std::vector<type_ptr> const& args) {return nullptr;}
 type_ptr get_sub(type_ptr t, std::vector<type_ptr> const& args) {
   switch (t->kind) {
@@ -96,6 +96,7 @@ static type_ptr parse_type(sstring str) {
     case '*': return types::pointer::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
     case '^': return types::borrow::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
   }
+  if (str == bool_) return types::integer::get(1);
   switch (str.front()) {
     case 'i':
       if (str == isize) return types::integer::get(sizeof(void*) * 8, false);

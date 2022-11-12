@@ -4,7 +4,7 @@
 #include "cobalt/types.hpp"
 using namespace cobalt;
 using enum types::type_base::kind_t;
-const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize");
+const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool");
 static type_ptr parse_type(sstring str) {
   if (str.empty()) return nullptr;
   switch (str.back()) {
@@ -12,6 +12,7 @@ static type_ptr parse_type(sstring str) {
     case '*': return types::pointer::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
     case '^': return types::borrow::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
   }
+  if (str == bool_) return types::integer::get(1);
   switch (str.front()) {
     case 'i':
       if (str == isize) return types::integer::get(sizeof(void*) * 8, false);
@@ -128,6 +129,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
     case INTEGER: switch (t2->kind) {
       case INTEGER: {
         auto lb = static_cast<types::integer const*>(t1)->nbits, rb = static_cast<types::integer const*>(t2)->nbits;
+        if (rb == 1 || rb == -1) return ctx.builder.CreateIsNotNull(v);
         if (lb < 0) {
           if (rb < 0) {
             if (rb < lb) return ctx.builder.CreateZExt(v, t2->llvm_type(loc, ctx));
@@ -159,9 +161,12 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case CUSTOM: return nullptr;
     }
     case FLOAT: switch (t2->kind) {
-      case INTEGER:
-        if (static_cast<types::integer const*>(t1)->nbits < 0) return ctx.builder.CreateFPToUI(v, t2->llvm_type(loc, ctx));
+      case INTEGER: {
+        auto b = static_cast<types::integer const*>(t2)->nbits;
+        if (b == 1 || b == -1) return ctx.builder.CreateFCmpONE(v, llvm::ConstantFP::getZero(t1->llvm_type(loc, ctx)));
+        else if (b < 0) return ctx.builder.CreateFPToUI(v, t2->llvm_type(loc, ctx));
         else return ctx.builder.CreateFPToSI(v, t2->llvm_type(loc, ctx));
+      }
       case FLOAT:
         if (t2->size() > t1->size()) return ctx.builder.CreateFPExt(v, t2->llvm_type(loc, ctx));
         else return ctx.builder.CreateFPTrunc(v, t2->llvm_type(loc, ctx));
@@ -170,7 +175,9 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case CUSTOM: return nullptr;
     }
     case POINTER: switch (t2->kind) {
-      case INTEGER: return ctx.builder.CreatePtrToInt(v, t2->llvm_type(loc, ctx));
+      case INTEGER:
+        if (static_cast<types::integer const*>(t2)->nbits == 1) return ctx.builder.CreateIsNotNull(v);
+        else ctx.builder.CreatePtrToInt(v, t2->llvm_type(loc, ctx));
       case FLOAT: return nullptr;
       case POINTER: return ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
@@ -190,13 +197,16 @@ static typed_value unary_op(typed_value tv, std::string_view op, location loc, c
       if (op == "+") return tv;
       if (op == "-") return {ctx.builder.CreateNeg(tv.value), tv.type};
       if (op == "~") return {ctx.builder.CreateXor(tv.value, -1), tv.type};
+      if (op == "!") return {ctx.builder.CreateIsNull(tv.value), types::integer::get(1)};
       return nullval;
     case FLOAT:
       if (op == "+") return tv;
       if (op == "-") return {ctx.builder.CreateFNeg(tv.value), tv.type};
+      if (op == "!") return {ctx.builder.CreateFCmpOEQ(tv.value, llvm::ConstantFP::getZero(tv.type->llvm_type(loc, ctx))), types::integer::get(1)};
       return nullval;
     case POINTER:
       if (op == "*") return {tv.value, types::reference::get(static_cast<types::pointer const*>(tv.type)->base)};
+      if (op == "!") return {ctx.builder.CreateIsNull(tv.value), types::integer::get(1)};
       return nullval;
     case REFERENCE: {
       auto t = static_cast<types::reference const*>(tv.type)->base;

@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 
 project(Cobalt LANGUAGES C CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 20)
 
 execute_process(OUTPUT_VARIABLE LLVM_FLAGS COMMAND llvm-config --cppflags --ldflags --libs)
 string(STRIP "${LLVM_FLAGS}" LLVM_FLAGS)

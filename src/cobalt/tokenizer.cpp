@@ -10,7 +10,10 @@
 #else
 static unsigned char countl0(unsigned char c) {
   unsigned char out = 8;
-  while (c && out) c >>= 1;
+  while (c && out) {
+    c >>= 1;
+    --out;
+  }
   return out;
 }
 static unsigned char countl1(unsigned char c) {return countl0(~c);}

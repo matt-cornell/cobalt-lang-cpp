@@ -497,7 +497,7 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
   std::string_view macro_id;
   std::string args;
   if (estate == PAREN) {
-    macro_id = std::string_view{start, static_cast<std::size_t>(it - start) + 1};
+    macro_id = std::string_view{start, static_cast<std::size_t>(it - start) - 1};
     start = it;
     std::size_t depth = 1;
     while (depth && advance(it, end, c)) {

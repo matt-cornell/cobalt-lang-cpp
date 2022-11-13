@@ -917,7 +917,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
 }
 // literals.hpp
 typed_value cobalt::ast::integer_ast::codegen(compile_context& ctx) const {
-  if (suffix.empty()) return {llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(*ctx.context), val), types::integer::get(64)};
+  if (suffix.empty()) return {llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(*ctx.context), val), types::integer::get(0)};
   switch (suffix.front()) {
     case 'i':
       if (suffix == isize) return {llvm::Constant::getIntegerValue(llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8), val), types::integer::get(sizeof(void*) * 8, false)};

@@ -171,7 +171,7 @@ type_ptr cobalt::ast::call_ast::type(base_context& ctx) const {
 type_ptr cobalt::ast::fndef_ast::type(base_context& ctx) const {(void)ctx; return nullptr;}
 // literals.hpp
 type_ptr cobalt::ast::integer_ast::type(base_context& ctx) const {
-  if (suffix.empty()) return types::integer::get(64);
+  if (suffix.empty()) return types::integer::get(0);
   if (!(suffix.front() == 'i' || suffix.front() == 'u')) return nullptr;
   if (suffix == isize) return types::integer::get(sizeof(void*) * 8, false);
   if (suffix == usize) return types::integer::get(sizeof(void*) * 8, true);

@@ -139,7 +139,7 @@ AST parse_literals(span<token> code, flags_t flags) {
         return AST::create<ast::integer_ast>(code.front().loc, llvm::APInt(words.size() * 64, words), sstring::get(""));
       }
       case '1':
-        return AST::create<ast::float_ast>(code.front().loc, reinterpret_cast<float const&>(tok[1]), sstring::get(""));
+        return AST::create<ast::float_ast>(code.front().loc, reinterpret_cast<double const&>(tok[1]), sstring::get(""));
       case '\'':
         return AST::create<ast::char_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       case '"':

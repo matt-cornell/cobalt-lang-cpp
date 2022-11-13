@@ -1,6 +1,5 @@
 #include "cobalt/tokenizer.hpp"
 #include <cmath>
-#include <numbers>
 #include <optional>
 #include <llvm/ADT/APInt.h>
 #if __cplusplus >= 202002
@@ -11,7 +10,10 @@
 #else
 static unsigned char countl0(unsigned char c) {
   unsigned char out = 8;
-  while (c && out) c >>= 1;
+  while (c && out) {
+    c >>= 1;
+    --out;
+  }
   return out;
 }
 static unsigned char countl1(unsigned char c) {return countl0(~c);}
@@ -125,7 +127,7 @@ static bool is_hex(char32_t c) {
 }
 template <class I> static std::string parse_num(I& it, I end, bound_handler const& onerror, borrow_function<char32_t(char32_t)> step) {
   uint32_t decimal_places = 0;
-  constexpr double log2_10 = std::numbers::ln10_v<double> / std::numbers::ln2_v<double>;
+  constexpr double log2_10 = 3.32192809;
   llvm::APInt int_part;
   double float_part = 0;
   double bits = 0;
@@ -397,9 +399,9 @@ template <class I> static std::string parse_num(I& it, I end, bound_handler cons
   std::string out;
   if (decimal_places) {
     float_part += int_part.trunc(llvm::APInt::APINT_WORD_SIZE).getZExtValue();
-    out.resize(sizeof(double) + 2);
+    out.resize(sizeof(double) + 1);
     out[0] = '1';
-    std::memcpy(out.data() + 2, &float_part, sizeof(double));
+    std::memcpy(out.data() + 1, &float_part, sizeof(double));
   }
   else {
     out.resize(int_part.getNumWords() * llvm::APInt::APINT_WORD_SIZE + 2);
@@ -495,7 +497,7 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
   std::string_view macro_id;
   std::string args;
   if (estate == PAREN) {
-    macro_id = std::string_view{start, it - 1};
+    macro_id = std::string_view{start, static_cast<std::size_t>(it - start) + 1};
     start = it;
     std::size_t depth = 1;
     while (depth && advance(it, end, c)) {
@@ -545,7 +547,7 @@ template <class I> std::optional<std::string> parse_macro(I& it, I end, macro_ma
     }
     args.append(start, it - 1);
   }
-  else macro_id = std::string_view{start, --it};
+  else macro_id = std::string_view{start, static_cast<std::size_t>(--it - start)};
   if (macro_id.empty()) {
     flags.onerror(loc, "macro name cannot be empty", ERROR);
     return "";
@@ -997,7 +999,7 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
               return out;
             }
             auto it2 = code.begin() + idx;
-            std::string_view comment(it, it2);
+            std::string_view comment(it, it2 - it);
             it = it2 + count + 1;
             it2 = comment.begin();
             while (advance(it2, comment.end(), c)) step(c);

@@ -99,23 +99,23 @@ static type_ptr parse_type(sstring str) {
   switch (str.front()) {
     case 'i':
       if (str == isize) return types::integer::get(sizeof(void*) * 8, false);
-      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
+      if (str.size() > 1 && str.find_first_not_of("0123456789", 1) == std::string::npos) {
         unsigned width = 0;
         for (char c : str.substr(1)) {
           width *= 10;
           width += c - '0';
         }
-        return types::integer::get(width, false);
+        return width ? types::integer::get(width, false) : nullptr;
       }
     case 'u':
       if (str == usize) return types::integer::get(sizeof(void*) * 8, true);
-      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
+      if (str.size() > 1 && str.find_first_not_of("0123456789", 1) == std::string::npos) {
         unsigned width = 0;
         for (char c : str.substr(1)) {
           width *= 10;
           width += c - '0';
         }
-        return types::integer::get(width, true);
+        return width ? types::integer::get(width, true) : nullptr;
       }
     case 'f':
       if (str == f16) return types::float16::get();

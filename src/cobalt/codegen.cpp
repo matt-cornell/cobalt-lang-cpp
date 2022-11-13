@@ -68,7 +68,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
             }
           }
         }
-        else {
+        else if (lb) {
           if (rb < 0) {
             if (-rb > lb) {
               ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " changes sign").str(), WARNING);
@@ -91,6 +91,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
             }
           }
         }
+        else return ctx.builder.CreateZExtOrTrunc(v, t2->llvm_type(loc, ctx));
       }
       case FLOAT: {
         auto bits = static_cast<types::integer const*>(t1)->nbits;

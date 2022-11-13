@@ -6,7 +6,8 @@ namespace cobalt {
     struct vardef_ast : ast_base {
       sstring name;
       AST val;
-      vardef_ast(location loc, sstring name, AST&& val) : ast_base(loc), name(name), CO_INIT(val) {}
+      std::vector<std::string> annotations = {};
+      vardef_ast(location loc, sstring name, AST&& val, std::vector<std::string>&& annotations = {}) : ast_base(loc), name(name), CO_INIT(val), CO_INIT(annotations) {}
       bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<vardef_ast const*>(other)) return name == ptr->name && val == ptr->val; else return false;}
     private: 
     typed_value codegen_impl(compile_context& ctx) const override;
@@ -15,7 +16,8 @@ namespace cobalt {
     struct mutdef_ast : ast_base {
       sstring name;
       AST val;
-      mutdef_ast(location loc, sstring name, AST&& val) : ast_base(loc), name(name), CO_INIT(val) {}
+      std::vector<std::string> annotations = {};
+      mutdef_ast(location loc, sstring name, AST&& val, std::vector<std::string>&& annotations = {}) : ast_base(loc), name(name), CO_INIT(val), CO_INIT(annotations) {}
       bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<mutdef_ast const*>(other)) return name == ptr->name && val == ptr->val; else return false;}
     private: 
     typed_value codegen_impl(compile_context& ctx) const override;

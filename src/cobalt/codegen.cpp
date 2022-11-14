@@ -16,23 +16,23 @@ static type_ptr parse_type(sstring str) {
   switch (str.front()) {
     case 'i':
       if (str == isize) return types::integer::get(sizeof(void*) * 8, false);
-      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
+      if (str.size() > 1 && str.find_first_not_of("0123456789", 1) == std::string::npos) {
         unsigned width = 0;
         for (char c : str.substr(1)) {
           width *= 10;
           width += c - '0';
         }
-        return types::integer::get(width, false);
+        return width ? types::integer::get(width, false) : nullptr;
       }
     case 'u':
       if (str == usize) return types::integer::get(sizeof(void*) * 8, true);
-      if (str.find_first_not_of("0123456789", 1) == std::string::npos) {
+      if (str.size() > 1 && str.find_first_not_of("0123456789", 1) == std::string::npos) {
         unsigned width = 0;
         for (char c : str.substr(1)) {
           width *= 10;
           width += c - '0';
         }
-        return types::integer::get(width, true);
+        return width ? types::integer::get(width, true) : nullptr;
       }
     case 'f':
       if (str == f16) return types::float16::get();
@@ -69,7 +69,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
             }
           }
         }
-        else {
+        else if (lb) {
           if (rb < 0) {
             if (-rb > lb) {
               ctx.flags.onerror(loc, (llvm::Twine("implicit conversion from ") + t1->name() + " to " + t2->name() + " changes sign").str(), WARNING);
@@ -92,6 +92,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
             }
           }
         }
+        else return ctx.builder.CreateZExtOrTrunc(v, t2->llvm_type(loc, ctx));
       }
       case FLOAT: {
         auto bits = static_cast<types::integer const*>(t1)->nbits;
@@ -927,7 +928,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
 }
 // literals.hpp
 typed_value cobalt::ast::integer_ast::codegen(compile_context& ctx) const {
-  if (suffix.empty()) return {llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(*ctx.context), val), types::integer::get(64)};
+  if (suffix.empty()) return {llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(*ctx.context), val), types::integer::get(0)};
   switch (suffix.front()) {
     case 'i':
       if (suffix == isize) return {llvm::Constant::getIntegerValue(llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8), val), types::integer::get(sizeof(void*) * 8, false)};
@@ -1126,7 +1127,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       else ctx.path.pop_back();
       if (!tv.type) return nullval;
       auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
-      auto type = types::reference::get(tv.type);
+      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
@@ -1153,7 +1154,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       }
       ctx.builder.CreateStore(gv, tv.value);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
-      auto type = types::reference::get(tv.type);
+      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
@@ -1169,7 +1170,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     else ctx.path.pop_back();
     if (!tv.type) return nullval;
     tv.value->setName(name);
-    vm->insert(sstring::get(local), tv);
+    vm->insert(sstring::get(local), tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? typed_value{tv.value, types::integer::get(64)} : tv);
     return tv;
   }
 }
@@ -1214,7 +1215,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       else ctx.path.pop_back();
       if (!tv.type) return nullval;
       auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
-      auto type = types::reference::get(tv.type);
+      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
@@ -1241,7 +1242,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       }
       ctx.builder.CreateStore(tv.value, gv);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
-      auto type = types::reference::get(tv.type);
+      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
@@ -1256,9 +1257,9 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
     if (name.front() == '.') std::swap(ctx.path, old_path);
     else ctx.path.pop_back();
     if (!tv.type) return nullval;
-    auto a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
+    auto a = ctx.builder.CreateAlloca((tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type)->llvm_type(loc, ctx), nullptr, name);
     ctx.builder.CreateStore(tv.value, a);
-    auto type = types::reference::get(tv.type);
+    auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
     vm->insert(sstring::get(local), typed_value{a, type});
     return {a, type};
   }

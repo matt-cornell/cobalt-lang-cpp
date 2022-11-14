@@ -80,9 +80,10 @@ void cobalt::ast::fndef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefi
   auto sz = args.size();
   if (sz) {
     os << llvm::Twine("fndef: ") + name + ", return: " + ret + ", params: \n";
-    for (auto& [param, type] : args) os << prefix << "├── " << param << ": " << type << '\n';
+    for (auto const& [param, type] : args) os << prefix << "├── " << param << ": " << type << '\n';
   }
   else os << llvm::Twine("fndef: ") + name + ", no params\n";
+  for (auto const& ann : annotations) os << prefix << "├── @" << ann << '\n';
   print_node(os, prefix, body, true);
 }
 // literals.hpp
@@ -119,10 +120,12 @@ void cobalt::ast::import_ast::print_impl(llvm::raw_ostream& os, llvm::Twine pref
 // vars.hpp
 void cobalt::ast::vardef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, llvm::Twine("vardef: ") + name);
+  for (auto const& ann : annotations) os << prefix << "├── @" << ann << '\n';
   print_node(os, prefix, val, true);
 }
 void cobalt::ast::mutdef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, llvm::Twine("mutdef: ") + name);
+  for (auto const& ann : annotations) os << prefix << "├── @" << ann << '\n';
   print_node(os, prefix, val, true);
 }
 void cobalt::ast::varget_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {

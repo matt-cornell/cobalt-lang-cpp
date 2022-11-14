@@ -126,7 +126,6 @@ co help [category]
     cobalt::default_handler_t handler;
     flags.onerror = handler;
     bool fail = false;
-    std::string str;
     for (auto it = argv + 2; it != argv + argc; ++it) {
       handler = cobalt::default_handler;
       std::string_view file = *it;
@@ -149,7 +148,7 @@ co help [category]
   if (cmd == "debug") {
     bool markdown = false;
     std::string_view output = "";
-    std::string_view code = "";
+    std::string code = "";
     bool code_set = false;
     std::string_view source = "";
     for (auto it = argv + 2; it != argv + argc; ++it) {
@@ -208,8 +207,12 @@ co help [category]
           llvm::errs() << f.getError().message();
           return cleanup<1>();
         }
-        code = std::string_view{f.get()->getBuffer().data(), f.get()->getBufferSize()};
+        code = f.get()->getBuffer();
       }
+    }
+    if (!code_set) {
+      llvm::errs() << "no input for debug\n";
+      return cleanup<1>();
     }
     std::error_code ec;
     llvm::raw_fd_ostream os({output.empty() ? (std::string(source.empty() ? "cmdline" : (source == "-" ? "stdin" : source)) + (markdown ? ".md" : ".out")) : output}, ec);
@@ -257,7 +260,7 @@ co help [category]
       os << *ctx.module;
       os << "```\nThere were " << ll_warn << " warnings and " << ll_err << " errors.";
       if (ll_crit) os << "\nThere was at least one critical error.";
-      else os << "\nThere were no critical errors.";
+      else os << "\nThere were no critical errors.\n";
     }
     else {
       if (source.empty()) os << "Original\nThis is the original source from the command line:\n\n";
@@ -278,7 +281,7 @@ co help [category]
       os << *ctx.module;
       os << "\nThere were " << ll_warn << " warnings and " << ll_err << " errors.";
       if (ll_crit) os << "\nThere was at least one critical error.";
-      else os << "\nThere were no critical errors.";
+      else os << "\nThere were no critical errors.\n";
     }
     return cleanup<0>();
   }

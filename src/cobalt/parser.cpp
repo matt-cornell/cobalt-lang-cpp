@@ -139,7 +139,7 @@ AST parse_literals(span<token> code, flags_t flags) {
         return AST::create<ast::integer_ast>(code.front().loc, llvm::APInt(words.size() * 64, words), sstring::get(""));
       }
       case '1':
-        return AST::create<ast::float_ast>(code.front().loc, reinterpret_cast<float const&>(tok[1]), sstring::get(""));
+        return AST::create<ast::float_ast>(code.front().loc, reinterpret_cast<double const&>(tok[1]), sstring::get(""));
       case '\'':
         return AST::create<ast::char_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       case '"':
@@ -466,20 +466,34 @@ std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags
   return {parse_infix({code.begin(), it}, flags, &bin_ops[2]), it};
 }
 std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t flags) {
-#define UNSUPPORTED(TYPE) {flags.onerror(it->loc, TYPE " definitions are not currently supported", CRITICAL);}
+#define UNSUPPORTED(TYPE) {flags.onerror(it->loc, TYPE " definitions are not currently supported", CRITICAL); return {AST(nullptr), code.begin() + 1};}
   if (code.empty()) return {AST{nullptr}, code.end()};
   auto it = code.begin(), end = code.end();
   std::string_view tok = it->data;
+  std::vector<std::string> annotations;
   switch (tok.front()) {
     case ';': break;
+    case '@': annotations.push_back(std::string(tok.substr(1))); break;
     case 'c':
       if (tok == "cr") UNSUPPORTED("coroutine")
       else goto ST_DEFAULT;
       break;
     case 'm':
       if (tok == "module") {
+        annotations.clear();
         flags.onerror(it->loc, "module definitions are only allowed at the top-level scope", ERROR);
-        goto ST_DEFAULT;
+        if (++it == end) return {AST(nullptr), end};
+        tok = it->data;
+        if (tok == ";") return {AST(nullptr), ++it};
+        else if (tok == "{") {
+          std::size_t depth = 0;
+          while (++it != end && depth) switch (it->data.front()) {
+            case '{': ++depth; break;
+            case '}': --depth; break;
+          }
+          return {AST(nullptr), it};
+        }
+        else return {AST(nullptr), it};
       }
       else if (tok == "mut") {
         auto start = it->loc;
@@ -489,7 +503,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           name = it++->data;
           bool to_skip = false;
           switch (name.front()) {
-            case '.': 
+            case '.':
               flags.onerror((it - 1)->loc, "variable paths are not allowed in local variables", ERROR);
               to_skip = true;
               break;
@@ -519,11 +533,11 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           }
           switch (it->data.front()) {
             case ':': break;
-            case '.': 
+            case '.':
               to_skip = true;
               flags.onerror(it->loc, "variable paths are not allowed in local variables", ERROR);
               break;
-            case '=': 
+            case '=':
               if (it->data.size() != 1) {
                 to_skip = true;
                 flags.onerror(it->loc, "unexpected identifier in local variable definition", ERROR);
@@ -561,13 +575,13 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           it = it3;
           val = AST::create<ast::cast_ast>(start, t, std::move(ast));
         }
-        return {AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val)), it};
+        return {AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), false, std::move(annotations)), it};
       }
-      else if (tok == "mixin") UNSUPPORTED("mixin")
+      else if (tok == "mixin") {annotations.clear(); UNSUPPORTED("mixin")}
       else goto ST_DEFAULT;
       break;
     case 's':
-      if (tok == "struct") UNSUPPORTED("struct")
+      if (tok == "struct") {annotations.clear(); UNSUPPORTED("struct")}
       else goto ST_DEFAULT;
       break;
     case 'f':
@@ -576,7 +590,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
         std::string name = (++it)->data;
         bool to_skip = false;
         switch (name.front()) {
-          case '.': 
+          case '.':
             flags.onerror(start, "variable paths are not allowed in local function", ERROR);
             to_skip = true;
             break;
@@ -711,12 +725,12 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           }
           if (it->data != "=") {
             flags.onerror(it->loc, "function must have a body", ERROR);
-            return {AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), AST(nullptr)), it};
+            return {AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), AST(nullptr), std::move(annotations)), it};
           }
           else {
             auto [ast, i] = parse_expr({it + 1, end}, flags);
             it = i;
-            return {AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), std::move(ast)), it};
+            return {AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), std::move(ast), std::move(annotations)), it};
           }
         }
       }
@@ -731,7 +745,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           name = it++->data;
           bool to_skip = false;
           switch (name.front()) {
-            case '.': 
+            case '.':
               flags.onerror((it - 1)->loc, "variable paths are not allowed in local variables", ERROR);
               to_skip = true;
               break;
@@ -761,11 +775,11 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           }
           switch (it->data.front()) {
             case ':': break;
-            case '.': 
+            case '.':
               to_skip = true;
               flags.onerror(it->loc, "variable paths are not allowed in local variables", ERROR);
               break;
-            case '=': 
+            case '=':
               if (it->data.size() != 1) {
                 to_skip = true;
                 flags.onerror(it->loc, "unexpected identifier in local variable definition", ERROR);
@@ -803,13 +817,14 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           it = it3;
           val = AST::create<ast::cast_ast>(start, t, std::move(ast));
         }
-        return {AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val)), it};
+        return {AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), false, std::move(annotations)), it};
       }
       else goto ST_DEFAULT;
       break;
     case 'i':
       if (tok == "import") {
         location start = it->loc;
+        if (annotations.size()) flags.onerror(start, "annotations cannot be applied to an import statement", ERROR);
         std::vector<AST> paths;
         for (auto& path : parse_paths(it, code.end(), flags)) paths.push_back(AST::create<ast::import_ast>(start, std::move(path)));
         return {paths.size() == 1 ? std::move(paths.front()) : AST::create<ast::group_ast>(start, std::move(paths)), it};
@@ -817,6 +832,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
       else goto ST_DEFAULT;
       break;
     default: ST_DEFAULT:
+      if (annotations.size()) flags.onerror(it->loc, "annotations cannot be applied to expressions", ERROR);
       return parse_expr({it, end}, flags, ";}");
   }
   return {AST(nullptr), it};
@@ -827,16 +843,22 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
   if (code.empty()) return {std::vector<AST>{}, code.end()};
   std::vector<AST> tl_nodes;
   const auto end = code.end();
+  std::vector<std::string> annotations;
   for (auto it = code.begin(); it != end; ++it) {
     std::string_view tok = it->data;
     switch (tok.front()) {
-      case ';': break;
+      case ';': llvm::outs() << ";\n"; break;
+      case '@': annotations.push_back(std::string(tok.substr(1))); break;
       case 'c':
-        if (tok == "cr") UNSUPPORTED("coroutine")
+        if (tok == "cr") {annotations.clear(); UNSUPPORTED("coroutine")}
         else goto TL_DEFAULT;
         break;
       case 'm':
         if (tok == "module") {
+          if (annotations.size()) {
+            flags.onerror(it->loc, "annotations cannot be applied to a module", ERROR);
+            annotations.clear();
+          }
           auto start = it->loc;
           std::string module_path;
           uint8_t lwp = 2; // last was period; 0=false, 1=true, 2=start
@@ -981,13 +1003,13 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
-          tl_nodes.push_back(AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), true));
+          tl_nodes.push_back(AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), true, std::exchange(annotations, {})));
         }
-        else if (tok == "mixin") UNSUPPORTED("mixin")
+        else if (tok == "mixin") {annotations.clear(); UNSUPPORTED("mixin")}
         else goto TL_DEFAULT;
         break;
       case 's':
-        if (tok == "struct") UNSUPPORTED("struct")
+        if (tok == "struct") {annotations.clear(); UNSUPPORTED("struct")}
         else goto TL_DEFAULT;
         break;
       case 'f':
@@ -1128,7 +1150,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             else {
               auto [ast, i] = parse_expr({it + 1, end}, flags);
               it = i;
-              tl_nodes.push_back(AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), std::move(ast)));
+              tl_nodes.push_back(AST::create<ast::fndef_ast>(start, sstring::get(name), return_type, std::move(params), std::move(ast), std::exchange(annotations, {})));
             }
           }
         }
@@ -1216,19 +1238,23 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
-          tl_nodes.push_back(AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), true));
+          tl_nodes.push_back(AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), true, std::exchange(annotations, {})));
         }
         else goto TL_DEFAULT;
         break;
       case 'i':
         if (tok == "import") {
+          if (annotations.size()) flags.onerror(it->loc, "annotations cannot be applied to an import statement", ERROR);
           location start = it->loc;
           for (auto& path : parse_paths(it, code.end(), flags)) tl_nodes.push_back(AST::create<ast::import_ast>(start, std::move(path)));
         }
         else goto TL_DEFAULT;
         break;
-      case '}': return {std::move(tl_nodes), it};
+      case '}':
+        if (annotations.size()) flags.onerror(it->loc, "annotations must have a target", ERROR);
+        return {std::move(tl_nodes), it};
       default: TL_DEFAULT:
+        annotations.clear();
         flags.onerror(it->loc, (llvm::Twine("invalid top-level token '") + it->data + "'").str(), ERROR);
     }
   }

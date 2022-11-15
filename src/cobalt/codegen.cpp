@@ -42,6 +42,16 @@ static type_ptr parse_type(sstring str) {
   }
   return nullptr;
 }
+static std::pair<types::integer const*, bool> is_signed(type_ptr lhs, type_ptr rhs) {
+  auto l = static_cast<types::integer const*>(lhs), r = static_cast<types::integer const*>(rhs);
+  switch ((int(l->nbits < 0) << 1) | int(r->nbits < 0)) {
+    case 0: return {l->nbits > r->nbits ? l : r, true};
+    case 1: return {-l->nbits > r->nbits ? l : r, true};
+    case 2: return {l->nbits > -r->nbits ? l : r, true};
+    case 3: return {l->nbits < r->nbits ? l : r, false};
+  }
+  return {nullptr, false}; // unreachable
+}
 static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, location loc, compile_context& ctx) {
   if (!(t1 && t2)) return nullptr;
   if (t1 == t2) return v;
@@ -101,6 +111,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       }
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case FLOAT: switch (t2->kind) {
@@ -113,6 +124,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
         }
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case POINTER: return nullptr;
@@ -120,6 +132,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       auto t = static_cast<types::reference const*>(t1)->base;
       return impl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
     }
+    case FUNCTION: return nullptr;
     case CUSTOM: return nullptr;
   }
 }
@@ -159,6 +172,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
         else return ctx.builder.CreateSIToFP(v, t2->llvm_type(loc, ctx));
       case POINTER: return ctx.builder.CreateIntToPtr(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case FLOAT: switch (t2->kind) {
@@ -173,6 +187,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
         else return ctx.builder.CreateFPTrunc(v, t2->llvm_type(loc, ctx));
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case POINTER: switch (t2->kind) {
@@ -182,12 +197,14 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case FLOAT: return nullptr;
       case POINTER: return ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case REFERENCE: {
       auto t = static_cast<types::reference const*>(t1)->base;
       return impl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
     }
+    case FUNCTION: return nullptr;
     case CUSTOM: return nullptr;
   }
 }
@@ -206,7 +223,11 @@ static typed_value unary_op(typed_value tv, std::string_view op, location loc, c
       if (op == "!") return {ctx.builder.CreateFCmpOEQ(tv.value, llvm::ConstantFP::getZero(tv.type->llvm_type(loc, ctx))), types::integer::get(1)};
       return nullval;
     case POINTER:
-      if (op == "*") return {tv.value, types::reference::get(static_cast<types::pointer const*>(tv.type)->base)};
+      if (op == "*") {
+        auto t = static_cast<types::pointer const*>(tv.type)->base;
+        if (t->kind == FUNCTION) return {tv.value, t};
+        else return {tv.value, types::reference::get(t)};
+      }
       if (op == "!") return {ctx.builder.CreateIsNull(tv.value), types::integer::get(1)};
       return nullval;
     case REFERENCE: {
@@ -268,22 +289,16 @@ static typed_value unary_op(typed_value tv, std::string_view op, location loc, c
           }
           break;
         case REFERENCE: break;
+        case FUNCTION: break;
         case CUSTOM: break;
       }
       return unary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), tv.value), t}, op, loc, ctx);
     }
+    case FUNCTION:
+      if (op == "&") return {ctx.builder.CreateBitCast(tv.value, llvm::Type::getInt8PtrTy(*ctx.context)), types::pointer::get(tv.type)};
+      return nullval;
     case CUSTOM: return nullval;
   }
-}
-std::pair<types::integer const*, bool> is_signed(type_ptr lhs, type_ptr rhs) {
-  auto l = static_cast<types::integer const*>(lhs), r = static_cast<types::integer const*>(rhs);
-  switch ((int(l->nbits < 0) << 1) | int(r->nbits < 0)) {
-    case 0: return {l->nbits > r->nbits ? l : r, true};
-    case 1: return {-l->nbits > r->nbits ? l : r, true};
-    case 2: return {l->nbits > -r->nbits ? l : r, true};
-    case 3: return {l->nbits < r->nbits ? l : r, false};
-  }
-  return {nullptr, false}; // unreachable
 }
 static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view op, location loc, compile_context& ctx) {
   if (!lhs.type) return nullval;
@@ -443,6 +458,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
+      case FUNCTION: return nullval;
       case CUSTOM: return nullval;
     }
     case FLOAT: switch (rhs.type->kind) {
@@ -505,6 +521,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
+      case FUNCTION: return nullval;
       case CUSTOM: return nullval;
     }
     case POINTER: switch (rhs.type->kind) {
@@ -542,6 +559,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
+      case FUNCTION: return nullval;
       case CUSTOM: return nullval;
     }
     case REFERENCE: {
@@ -730,10 +748,12 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
           }
           break;
         case REFERENCE: break;
+        case FUNCTION: return nullval;
         case CUSTOM: break;
       }
       return binary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), lhs.value), t}, rhs, op, loc, ctx);
     }
+    case FUNCTION: return nullval;
     case CUSTOM: return nullval;
   }
 }
@@ -900,6 +920,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
   auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);
+  ctx.vars->insert(name, typed_value{f, types::function::get(t, std::move(args_t))});
   if (!f) return nullval;
   if (name.front() == '.') {
     old_path = ctx.path;
@@ -1013,7 +1034,7 @@ typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {
     old = idx;
     idx = name.find('.', old);
     if (it == vm->symbols.end()) {
-      if (it->second.index() == 3) vm = std::get<3>(it->second).get();
+      if (it->second.index() == 2) vm = std::get<2>(it->second).get();
       else {
         ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
         return nullval;
@@ -1053,7 +1074,7 @@ typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {
     auto ptr = vm->get(sstring::get(local));
     if (ptr) {
       auto pidx = ptr->index();
-      if (pidx == 3) vm = std::get<3>(*ptr).get();
+      if (pidx == 2) vm = std::get<2>(*ptr).get();
       else ctx.flags.onerror(loc, path.substr(0, idx) + " is not a module", ERROR);
     }
     else {
@@ -1076,11 +1097,7 @@ typed_value cobalt::ast::import_ast::codegen(compile_context& ctx) const {
   }
   auto [it, succ] = ctx.vars->symbols.insert({ss, *ptr});
   if (!succ) {
-    if (ptr->index() == it->second.index()) switch (ptr->index()) {
-      case 1: std::get<1>(it->second)->merge(*std::get<1>(*ptr));
-      case 3: std::get<3>(it->second)->include(std::get<3>(*ptr).get());
-      default: ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + ss + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
-    }
+    if (ptr->index() == it->second.index() && ptr->index() == 2) std::get<2>(it->second)->include(std::get<2>(*ptr).get());
     else ctx.flags.onerror(loc, (llvm::Twine("conflicting definitions for '") + ss + "' in '" + concat(ctx.path, "") + "' and '" + path + "'").str(), ERROR);
   }
   return nullval;
@@ -1104,7 +1121,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
         vm->symbols.insert({ss, symbol_type(nvm)});
         vm = nvm.get();
       }
-      else if (it->second.index() == 3) vm = std::get<3>(it->second).get();
+      else if (it->second.index() == 2) vm = std::get<2>(it->second).get();
       else {
         ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
         return nullval;
@@ -1169,7 +1186,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     if (name.front() == '.') std::swap(ctx.path, old_path);
     else ctx.path.pop_back();
     if (!tv.type) return nullval;
-    tv.value->setName(name);
+    if (!llvm::isa<llvm::GlobalValue>(tv.value)) tv.value->setName(name);
     vm->insert(sstring::get(local), tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? typed_value{tv.value, types::integer::get(64)} : tv);
     return tv;
   }
@@ -1192,7 +1209,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
         vm->symbols.insert({ss, symbol_type(nvm)});
         vm = nvm.get();
       }
-      else if (it->second.index() == 3) vm = std::get<3>(it->second).get();
+      else if (it->second.index() == 2) vm = std::get<2>(it->second).get();
       else {
         ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
         return nullval;
@@ -1257,7 +1274,22 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
     if (name.front() == '.') std::swap(ctx.path, old_path);
     else ctx.path.pop_back();
     if (!tv.type) return nullval;
-    auto a = ctx.builder.CreateAlloca((tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type)->llvm_type(loc, ctx), nullptr, name);
+    llvm::Value* a;
+    switch (tv.type->kind) {
+      case FUNCTION:
+        a = ctx.builder.CreateAlloca(llvm::Type::getInt8Ty(*ctx.context), nullptr, name);
+        break;
+      case INTEGER:
+        if (!static_cast<types::integer const*>(tv.type)->nbits) a = ctx.builder.CreateAlloca(llvm::Type::getInt64Ty(*ctx.context), nullptr, name);
+        else goto ALLOCA_DEFAULT;
+        break;
+      case POINTER:
+        if (static_cast<types::pointer const*>(tv.type)->base->kind == FUNCTION) a = ctx.builder.CreateAlloca(llvm::Type::getInt8PtrTy(*ctx.context), nullptr, name);
+        else goto ALLOCA_DEFAULT;
+        break;
+      default: ALLOCA_DEFAULT:
+        a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
+    }
     ctx.builder.CreateStore(tv.value, a);
     auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
     vm->insert(sstring::get(local), typed_value{a, type});
@@ -1273,7 +1305,7 @@ typed_value cobalt::ast::varget_ast::codegen(compile_context& ctx) const {
     auto ptr = vm->get(sstring::get(local));
     if (ptr) {
       auto pidx = ptr->index();
-      if (pidx == 3) vm = std::get<3>(*ptr).get();
+      if (pidx == 2) vm = std::get<2>(*ptr).get();
       else ctx.flags.onerror(loc, name.substr(0, idx) + " is not a module", ERROR);
     }
     else {

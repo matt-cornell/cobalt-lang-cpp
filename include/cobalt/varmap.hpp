@@ -22,19 +22,8 @@ namespace cobalt {
       }
     };
   }
-  struct function {
-    std::unordered_map<std::vector<types::type_base const*>, llvm::Function*, param_hash, param_eq> overloads;
-    std::unordered_set<std::vector<types::type_base const*>, param_hash, param_eq> merge(function const& other) {
-      std::unordered_set<std::vector<types::type_base const*>, param_hash, param_eq> out;
-      for (auto const& [key, val] : other.overloads) {
-        if (overloads.contains(key)) out.insert(key);
-        else overloads.insert({key, val});
-      }
-      return out;
-    }
-  };
   struct varmap;
-  using symbol_type = std::variant<typed_value, std::shared_ptr<function>, types::type_base const*, std::shared_ptr<varmap>>;
+  using symbol_type = std::variant<typed_value, types::type_base const*, std::shared_ptr<varmap>>;
   using symbol_ptr = symbol_type const*;
   struct varmap {
     varmap* parent;
@@ -52,11 +41,7 @@ namespace cobalt {
         for (auto [name, sym] : other->symbols) {
           auto [it, succ] = symbols.insert({name, sym});
           if (!succ) {
-            if (sym.index() == it->second.index()) switch (sym.index()) {
-              case 1: std::get<1>(it->second)->merge(*std::get<1>(sym));
-              case 3: std::get<3>(it->second)->include(std::get<3>(sym).get());
-              default: out.insert(name);
-            }
+            if (sym.index() == it->second.index() && sym.index() == 2) std::get<2>(it->second)->include(std::get<2>(sym).get());
             else out.insert(name);
           }
         }

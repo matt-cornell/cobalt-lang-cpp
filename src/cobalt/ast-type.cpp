@@ -28,6 +28,9 @@ type_ptr get_unary(type_ptr t, sstring op) {
     case REFERENCE:
       if (op == "&") return types::pointer::get(static_cast<types::reference const*>(t)->base);
       return get_unary(static_cast<types::reference const*>(t), op);
+    case FUNCTION:
+      if (op == "&") return t;
+      return nullptr;
     case CUSTOM: return nullptr;
   }
 }
@@ -61,6 +64,7 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         if (op == "+" || op == "-") return rhs;
         return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case FLOAT: switch (rhs->kind) {
@@ -72,6 +76,7 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         return nullptr;
       case POINTER: return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case POINTER: switch (rhs->kind) {
@@ -83,9 +88,11 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         if (op == "-") return types::integer::get(sizeof(void*) * 8);
         return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
+      case FUNCTION: return nullptr;
       case CUSTOM: return nullptr;
     }
     case REFERENCE: return get_binary(static_cast<types::reference const*>(lhs)->base, rhs, op);
+    case FUNCTION: return nullptr;
     case CUSTOM: return nullptr;
   }
 }
@@ -214,7 +221,7 @@ type_ptr cobalt::ast::varget_ast::type(base_context& ctx) const {
       auto pidx = ptr->index();
       if (idx == std::string::npos) return pidx == 0 ? std::get<0>(*ptr).type : nullptr;
       else {
-        if (pidx == 3) vm = std::get<3>(*ptr).get();
+        if (pidx == 2) vm = std::get<2>(*ptr).get();
         else return nullptr;
       }
     }

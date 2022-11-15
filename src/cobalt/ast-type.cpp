@@ -96,6 +96,17 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
     case CUSTOM: return nullptr;
   }
 }
+static type_ptr get_call(type_ptr self, std::vector<type_ptr>&& args) {
+  switch (self->kind) {
+    case INTEGER:
+    case FLOAT:
+    case POINTER: return nullptr;
+    case REFERENCE: return get_call(static_cast<types::reference const*>(self)->base, args);
+    case FUNCTION:
+      return static_cast<types::function const*>(self)->ret;
+    case CUSTOM: return nullptr;
+  }
+}
 static type_ptr parse_type(sstring str) {
   if (str.empty()) return nullptr;
   switch (str.back()) {

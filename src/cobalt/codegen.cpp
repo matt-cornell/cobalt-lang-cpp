@@ -757,6 +757,50 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
     case CUSTOM: return nullval;
   }
 }
+static std::string invalid_args(typed_value tv, std::vector<typed_value>&& args) {
+  std::string str = "cannot call value of type ";
+  str += tv.type->name();
+  if (args.empty()) str += " without arguments";
+  else {
+    str += " with argument types (";
+    for (auto [_, t] : args) {
+      str += t->name();
+      str += ", ";
+    }
+    str.pop_back();
+    str.back() = ')';
+  }
+  return str;
+}
+static typed_value call(typed_value tv, std::vector<typed_value>&& args, location loc, compile_context& ctx) {
+  if (!(tv.value && tv.type)) return nullval;
+  switch (tv.type->kind) {
+    case INTEGER:
+    case FLOAT:
+    case POINTER: {
+      ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
+      return nullval;
+    }
+    case REFERENCE: {
+      auto t = static_cast<types::reference const*>(tv.type)->base;
+      return call({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), tv.value), t}, std::move(args), loc, ctx);
+    }
+    case FUNCTION: {
+      auto f = static_cast<types::function const*>(tv.type);
+      if (args.size() != f->args.size()) {
+        ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
+        return nullval;
+      }
+      std::vector<llvm::Value*> args_v(args.size());
+      for (std::size_t i = 0; i < args.size(); ++i) if (!(args_v[i] = impl_convert(args[i].value, args[i].type, f->args[i], loc, ctx))) {
+        ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
+        return nullval;
+      }
+      return {ctx.builder.CreateCall(llvm::cast<llvm::FunctionType>(f->llvm_type(loc, ctx)), tv.value, args_v), f->ret};
+    }
+    case CUSTOM: return nullval;
+  }
+}
 static std::string concat(std::vector<std::string_view> const& vals, std::string_view other) {
   std::size_t sz = other.size() + vals.size();
   for (auto val : vals) sz += val.size();
@@ -897,7 +941,12 @@ typed_value cobalt::ast::unop_ast::codegen(compile_context& ctx) const {
   return nullval;
 }
 typed_value cobalt::ast::subscr_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
-typed_value cobalt::ast::call_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::call_ast::codegen(compile_context& ctx) const {
+  auto self = val(ctx);
+  std::vector<typed_value> args_v(args.size());
+  for (std::size_t i = 0; i < args.size(); ++i) args_v[i] = args[i](ctx);
+  return call(self, std::move(args_v), loc, ctx);
+}
 typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   std::vector<llvm::Type*> params_t;
   std::vector<type_ptr> args_t;

@@ -967,33 +967,107 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     ctx.flags.onerror(loc, (llvm::Twine("invalid type name '") + ret + "' for function return types").str(), ERROR);
     return nullval;
   }
+  bool is_extern = false, throws = false;
+  std::string_view link_as = "";
+  unsigned cconv = 8;
+  {
+    auto idx = name.rfind('.');
+    if ((idx != std::string::npos ? name.substr(idx) : std::string_view{name}) == "main") cconv = 0; // main should use C calling convention for compatibility
+  }
+  llvm::GlobalValue::LinkageTypes link_type = llvm::GlobalValue::ExternalLinkage;
+  bool ltset = false, ccset = false;
+  for (auto const& ann : annotations) {
+    if (ann.starts_with("extern(")) {
+      if (is_extern) ctx.flags.onerror(loc, "reuse of @extern annotation", ERROR);
+      is_extern = true;
+      auto cc = std::string_view{ann.data() + 7, ann.size() - 8};
+      if (!cc.empty()) {
+        if (cc == "c" || cc == "C") cconv = llvm::CallingConv::C;
+        else if (cc == "fast" || cc == "Fast") cconv = llvm::CallingConv::Fast;
+        else if (cc == "cold" || cc == "Cold") cconv = llvm::CallingConv::Cold;
+        else if (cc == "tail" || cc == "Tail") cconv = llvm::CallingConv::Tail;
+        else if (cc == "any" || cc == "any_reg" || cc == "any-reg" || cc == "any reg" || cc == "Any" || cc == "AnyReg" || cc == "Any Reg") cconv = llvm::CallingConv::AnyReg;
+        else if (cc == "swift" || cc == "Swift") cconv = llvm::CallingConv::Swift;
+        else if (cc == "swift_tail" || cc == "swift-tail" || cc == "swift tail" || cc == "SwifTail" || cc == "Swift Tail") cconv = llvm::CallingConv::SwiftTail;
+        else if (cc == "ghc" || cc == "GHC") cconv = llvm::CallingConv::GHC;
+        else if (cc == "hipe" || cc == "HiPE") cconv = llvm::CallingConv::HiPE;
+        else ctx.flags.onerror(loc, (llvm::Twine("unknown calling convention '") + cc + "'").str(), ERROR);
+      }
+    }
+    else if (ann.starts_with("throws(")) {
+      if (ann.size() != 8) ctx.flags.onerror(loc, "@throws annotation should be used without arguments", ERROR);
+      if (throws) ctx.flags.onerror(loc, "reuse of @throws annotation", ERROR);
+      throws = true;
+    }
+    else if (ann.starts_with("linkas(")) {
+      if (!link_as.empty()) ctx.flags.onerror(loc, "reuse of @linkas annotation", ERROR);
+      link_as = std::string_view{ann.data() + 7, ann.size() - 8};
+      if (link_as.empty()) ctx.flags.onerror(loc, "@linkas must be used with arguments", ERROR);
+    }
+    else if (ann.starts_with("link(")) {
+      if (ltset) ctx.flags.onerror(loc, "reuse of @link annotation", ERROR);
+      auto lt = std::string_view{ann.data() + 5, ann.size() - 6};
+      if (lt.empty()) ctx.flags.onerror(loc, "@link must be used with arguments", ERROR);
+      ltset = true;
+      if (lt == "external" || lt == "extern") link_type = llvm::GlobalValue::ExternalLinkage;
+      else if (lt == "weak_any" || lt == "weak-any" || lt == "weak any") link_type = llvm::GlobalValue::WeakAnyLinkage;
+      else if (lt == "weak_odr" || lt == "weak-odr" || lt == "weak odr" || lt == "weak ODR") link_type = llvm::GlobalValue::WeakODRLinkage;
+      else if (lt == "internal" || lt == "intern") link_type = llvm::GlobalValue::InternalLinkage;
+      else if (lt == "private") link_type = llvm::GlobalValue::PrivateLinkage;
+      else if (lt == "weak" || lt == "extern_weak" || lt == "extern-weak" || lt == "extern weak" || lt == "external_weak" || lt == "external-weak" || lt == "external weak") link_type = llvm::GlobalValue::ExternalWeakLinkage;
+      else ctx.flags.onerror(loc, (llvm::Twine("unknown linkage type '") + lt + "'").str(), ERROR);
+    }
+    else if (ann.starts_with("cconv(")) {
+      if (ccset) ctx.flags.onerror(loc, "redefinition of calling convention annotation", ERROR);
+      auto cc = std::string_view{ann.data() + 6, ann.size() - 7};
+      if (cc.empty()) ctx.flags.onerror(loc, "@cconv must be used with arguments", ERROR);
+      if (cc == "c" || cc == "C") cconv = llvm::CallingConv::C;
+      else if (cc == "fast" || cc == "Fast") cconv = llvm::CallingConv::Fast;
+      else if (cc == "cold" || cc == "Cold") cconv = llvm::CallingConv::Cold;
+      else if (cc == "tail" || cc == "Tail") cconv = llvm::CallingConv::Tail;
+      else if (cc == "any" || cc == "any_reg" || cc == "any-reg" || cc == "any reg" || cc == "Any" || cc == "AnyReg" || cc == "Any Reg") cconv = llvm::CallingConv::AnyReg;
+      else if (cc == "swift" || cc == "Swift") cconv = llvm::CallingConv::Swift;
+      else if (cc == "swift_tail" || cc == "swift-tail" || cc == "swift tail" || cc == "SwifTail" || cc == "Swift Tail") cconv = llvm::CallingConv::SwiftTail;
+      else if (cc == "ghc" || cc == "GHC") cconv = llvm::CallingConv::GHC;
+      else if (cc == "hipe" || cc == "HiPE") cconv = llvm::CallingConv::HiPE;
+      else ctx.flags.onerror(loc, (llvm::Twine("unknown calling convention '") + cc + "'").str(), ERROR);
+    }
+    else ctx.flags.onerror(loc, "unknown annotation @" + ann, ERROR);
+  }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  auto f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);
-  ctx.vars->insert(name, typed_value{f, types::function::get(t, std::move(args_t))});
+  auto f = llvm::Function::Create(ft, link_type, link_as.empty() ? (name.front() == '.' ? std::string_view(name) : concat(ctx.path, name)) : link_as, *ctx.module);
   if (!f) return nullval;
-  if (name.front() == '.') {
-    old_path = ctx.path;
-    ctx.path = {name.substr(1)};
+  f->setCallingConv(cconv);
+  {
+    std::size_t i = 0;
+    for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
   }
-  else ctx.path.push_back(name);
-  auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
-  auto ip = ctx.builder.GetInsertBlock();
-  ctx.builder.SetInsertPoint(bb);
-  ctx.vars = new varmap(ctx.vars);
-  for (std::size_t i = 0; i < args.size(); ++i) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
-  auto tv = body(ctx);
-  if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-  else {
-    auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
-    if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-    else ctx.builder.CreateRet(p);
+  ctx.vars->insert(name, typed_value{f, types::function::get(t, std::move(args_t))});
+  if (!is_extern) {
+    if (name.front() == '.') {
+      old_path = ctx.path;
+      ctx.path = {name.substr(1)};
+    }
+    else ctx.path.push_back(name);
+    auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
+    auto ip = ctx.builder.GetInsertBlock();
+    ctx.builder.SetInsertPoint(bb);
+    ctx.vars = new varmap(ctx.vars);
+    for (std::size_t i = 0; i < args.size(); ++i) if (!args[i].first.empty()) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
+    auto tv = body(ctx);
+    if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+    else {
+      auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
+      if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+      else ctx.builder.CreateRet(p);
+    }
+    auto vars = ctx.vars;
+    ctx.vars = ctx.vars->parent;
+    delete vars;
+    ctx.builder.SetInsertPoint(ip);
+    if (name.front() == '.') std::swap(ctx.path, old_path);
+    else ctx.path.pop_back();
   }
-  auto vars = ctx.vars;
-  ctx.vars = ctx.vars->parent;
-  delete vars;
-  ctx.builder.SetInsertPoint(ip);
-  if (name.front() == '.') std::swap(ctx.path, old_path);
-  else ctx.path.pop_back();
   return nullval;
 }
 // literals.hpp

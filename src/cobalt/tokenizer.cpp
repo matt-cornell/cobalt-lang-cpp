@@ -1079,10 +1079,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
                   step(c);
                   c3 = c2x(c);
                   if (c3 == 255) flags.onerror(loc, '\'' + to_string(c) + "' is not a hexadecimal character", ERROR);
-                  c2 |= c3 << 12;
+                  c2 <<= 4;
+                  c2 |= c3;
                   std::string str(3, '\0');
                   str[0] = '\'';
-                  std::memcpy(str.data() + 1, &c2, 2);
+                  str[1] = c2 & 0xFF;
+                  str[2] = c2 >> 8;
                   out.push_back({start, std::move(str)});
                 } break;
                 case 'U': {
@@ -1134,7 +1136,10 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
                   c2 |= c3;
                   std::string str(5, '\0');
                   str[0] = '\'';
-                  std::memcpy(str.data() + 1, &c2, 4);
+                  str[1] = c2 & 0xFF;
+                  str[2] = (c2 >> 8) & 0xFF;
+                  str[3] = (c2 >> 16) & 0xFF;
+                  str[4] = c2 >> 24;
                   out.push_back({start, std::move(str)});
                 } break;
               }

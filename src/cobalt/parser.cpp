@@ -575,7 +575,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           it = it3;
           val = AST::create<ast::cast_ast>(start, t, std::move(ast));
         }
-        return {AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), std::move(annotations)), it};
+        return {AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), false, std::move(annotations)), it};
       }
       else if (tok == "mixin") {annotations.clear(); UNSUPPORTED("mixin")}
       else goto ST_DEFAULT;
@@ -817,7 +817,7 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
           it = it3;
           val = AST::create<ast::cast_ast>(start, t, std::move(ast));
         }
-        return {AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), std::move(annotations)), it};
+        return {AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), false, std::move(annotations)), it};
       }
       else goto ST_DEFAULT;
       break;
@@ -1003,7 +1003,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
-          tl_nodes.push_back(AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), std::exchange(annotations, {})));
+          tl_nodes.push_back(AST::create<ast::mutdef_ast>(start, sstring::get(name), std::move(val), true, std::exchange(annotations, {})));
         }
         else if (tok == "mixin") {annotations.clear(); UNSUPPORTED("mixin")}
         else goto TL_DEFAULT;
@@ -1238,7 +1238,7 @@ std::pair<std::vector<AST>, span<token>::iterator> parse_tl(span<token> code, fl
             it = it3;
             val = AST::create<ast::cast_ast>(start, t, std::move(ast));
           }
-          tl_nodes.push_back(AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), std::exchange(annotations, {})));
+          tl_nodes.push_back(AST::create<ast::vardef_ast>(start, sstring::get(name), std::move(val), true, std::exchange(annotations, {})));
         }
         else goto TL_DEFAULT;
         break;

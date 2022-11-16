@@ -100,22 +100,76 @@ std::pair<sstring, span<token>::iterator> parse_type(span<token> code, flags_t f
       case ':':
       case ';':
       case ',':
-      case '*':
       case '/':
       case '%':
       case '!':
       case '~':
       case '+':
       case '-':
-      case '&':
       case '|':
-      case '^':
       case '<':
       case '>':
       case '=':
         flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
         goto PT_END;
         break;
+      case '&':
+      case '*':
+      case '^':
+        if (tok.size() > 1 && tok[1] != tok.front()) {
+          flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+          goto PT_END;
+        }
+        if (lwp) {
+          flags.onerror(it->loc, "type name cannot end with a period", ERROR);
+          name.pop_back();
+          name += tok;
+        }
+        else name += tok;
+        for (++it; it != end; ++it) {
+          std::string_view tok = it->data;
+          if (exit_chars.find(tok.front()) != std::string::npos) {
+            graceful = true;
+            goto PT_END;
+          }
+          switch (tok.front()) {
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case ':':
+            case ';':
+            case ',':
+            case '/':
+            case '%':
+            case '!':
+            case '~':
+            case '+':
+            case '-':
+            case '|':
+            case '<':
+            case '>':
+            case '=':
+              flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+              goto PT_END;
+              break;
+            case '&':
+            case '*':
+            case '^':
+              if (tok.size() > 1 && tok[1] != tok.front()) {
+                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+                goto PT_END;
+              }
+              name += tok;
+              break;
+            default:
+              flags.onerror(it->loc, "invalid characters after type suffix", ERROR);
+              goto PT_END;
+          }
+        }
+        goto PT_END;
       default:
         if (lwp == 0) {
           flags.onerror(it->loc, "type name cannot contain consecutive identifiers, did you forget a period?", ERROR);

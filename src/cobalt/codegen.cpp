@@ -1119,12 +1119,7 @@ typed_value cobalt::ast::float_ast::codegen(compile_context& ctx) const {
   }
 }
 typed_value cobalt::ast::string_ast::codegen(compile_context& ctx) const {
-  std::vector<llvm::Constant*> elems;
-  elems.reserve(val.size() + 1);
-  auto i8_ty = llvm::Type::getInt8Ty(*ctx.context);
-  for (char c : val) elems.push_back(llvm::ConstantInt::get(i8_ty, c));
-  elems.push_back(llvm::ConstantInt::get(i8_ty, 0));
-  return {llvm::ConstantArray::get(llvm::ArrayType::get(i8_ty, 0), elems), types::pointer::get(types::integer::get(8))};
+  return {ctx.builder.CreateGlobalString(val, ".co.str." + llvm::Twine(ctx.init_count++)), types::pointer::get(types::integer::get(8))};
 }
 typed_value cobalt::ast::char_ast::codegen(compile_context& ctx) const {
   if (!suffix.empty()) {

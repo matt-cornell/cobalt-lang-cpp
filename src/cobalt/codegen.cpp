@@ -4,7 +4,7 @@
 #include "cobalt/types.hpp"
 using namespace cobalt;
 using enum types::type_base::kind_t;
-const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool");
+const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool"), null = sstring::get("null");
 static type_ptr parse_type(sstring str) {
   if (str.empty()) return nullptr;
   switch (str.back()) {
@@ -13,6 +13,7 @@ static type_ptr parse_type(sstring str) {
     case '^': return types::borrow::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
   }
   if (str == bool_) return types::integer::get(1);
+  if (str == null) return types::null::get();
   switch (str.front()) {
     case 'i':
       if (str == isize) return types::integer::get(sizeof(void*) * 8, false);
@@ -112,6 +113,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case FLOAT: switch (t2->kind) {
@@ -125,6 +127,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case POINTER: return nullptr;
@@ -132,6 +135,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       auto t = static_cast<types::reference const*>(t1)->base;
       return impl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
     }
+    case NULLTYPE: return nullptr;
     case FUNCTION: return nullptr;
     case CUSTOM: return nullptr;
   }
@@ -173,6 +177,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case POINTER: return ctx.builder.CreateIntToPtr(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case FLOAT: switch (t2->kind) {
@@ -188,6 +193,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case POINTER: switch (t2->kind) {
@@ -198,18 +204,20 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case POINTER: return ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case REFERENCE: {
       auto t = static_cast<types::reference const*>(t1)->base;
-      return impl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
+      return expl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
     }
+    case NULLTYPE: return nullptr;
     case FUNCTION: return nullptr;
     case CUSTOM: return nullptr;
   }
 }
 static typed_value unary_op(typed_value tv, std::string_view op, location loc, compile_context& ctx) {
-  if (!(tv.value && tv.type)) return nullval;
+  if (!tv.type) return nullval;
   switch (tv.type->kind) {
     case INTEGER:
       if (op == "+") return tv;
@@ -290,6 +298,7 @@ static typed_value unary_op(typed_value tv, std::string_view op, location loc, c
           break;
         case REFERENCE: break;
         case FUNCTION: break;
+        case NULLTYPE: break;
         case CUSTOM: break;
       }
       return unary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), tv.value), t}, op, loc, ctx);
@@ -297,6 +306,7 @@ static typed_value unary_op(typed_value tv, std::string_view op, location loc, c
     case FUNCTION:
       if (op == "&") return {ctx.builder.CreateBitCast(tv.value, llvm::Type::getInt8PtrTy(*ctx.context)), types::pointer::get(tv.type)};
       return nullval;
+    case NULLTYPE: return nullval;
     case CUSTOM: return nullval;
   }
 }
@@ -459,6 +469,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
       case FUNCTION: return nullval;
+      case NULLTYPE: return nullval;
       case CUSTOM: return nullval;
     }
     case FLOAT: switch (rhs.type->kind) {
@@ -522,6 +533,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
       case FUNCTION: return nullval;
+      case NULLTYPE: return nullval;
       case CUSTOM: return nullval;
     }
     case POINTER: switch (rhs.type->kind) {
@@ -560,6 +572,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
       case FUNCTION: return nullval;
+      case NULLTYPE: return nullval;
       case CUSTOM: return nullval;
     }
     case REFERENCE: {
@@ -749,11 +762,13 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
           break;
         case REFERENCE: break;
         case FUNCTION: return nullval;
+        case NULLTYPE: return nullval;
         case CUSTOM: break;
       }
       return binary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), lhs.value), t}, rhs, op, loc, ctx);
     }
     case FUNCTION: return nullval;
+    case NULLTYPE: return nullval;
     case CUSTOM: return nullval;
   }
 }
@@ -773,7 +788,7 @@ static std::string invalid_args(typed_value tv, std::vector<typed_value>&& args)
   return str;
 }
 static typed_value call(typed_value tv, std::vector<typed_value>&& args, location loc, compile_context& ctx) {
-  if (!(tv.value && tv.type)) return nullval;
+  if (!tv.type) return nullval;
   switch (tv.type->kind) {
     case INTEGER:
     case FLOAT:
@@ -798,7 +813,12 @@ static typed_value call(typed_value tv, std::vector<typed_value>&& args, locatio
       }
       return {ctx.builder.CreateCall(llvm::cast<llvm::FunctionType>(f->llvm_type(loc, ctx)), tv.value, args_v), f->ret};
     }
-    case CUSTOM: return nullval;
+    case NULLTYPE:
+      ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
+      return nullval;
+    case CUSTOM:
+      ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
+      return nullval;
   }
 }
 static std::string concat(std::vector<std::string_view> const& vals, std::string_view other) {
@@ -945,22 +965,21 @@ typed_value cobalt::ast::call_ast::codegen(compile_context& ctx) const {
   auto self = val(ctx);
   std::vector<typed_value> args_v(args.size());
   for (std::size_t i = 0; i < args.size(); ++i) args_v[i] = args[i](ctx);
-  return call(self, std::move(args_v), loc, ctx);
+  auto tv = call(self, std::move(args_v), loc, ctx);
+  return tv;
 }
 typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
-  std::vector<llvm::Type*> params_t;
-  std::vector<type_ptr> args_t;
-  params_t.reserve(args.size());
-  args_t.reserve(args.size());
+  std::vector<llvm::Type*> params_t(args.size());
+  std::vector<type_ptr> args_t(args.size());
   std::vector<std::string_view> old_path;
-  for (auto [_, type] : args) {
-    auto t = parse_type(type);
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    auto t = parse_type(args[i].second);
     if (!t) {
-      ctx.flags.onerror(loc, (llvm::Twine("invalid type name '") + type + "' for function parameter").str(), ERROR);
+      ctx.flags.onerror(loc, (llvm::Twine("invalid type name '") + args[i].second + "' for function parameter").str(), ERROR);
       return nullval;
     }
-    args_t.push_back(t);
-    params_t.push_back(t->llvm_type(loc, ctx));
+    args_t[i] = t;
+    params_t[i] = t->llvm_type(loc, ctx);
   }
   auto t = parse_type(ret);
   if (!t) {
@@ -1035,14 +1054,14 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     else ctx.flags.onerror(loc, "unknown annotation @" + ann, ERROR);
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  auto f = llvm::Function::Create(ft, link_type, link_as.empty() ? (name.front() == '.' ? std::string_view(name) : concat(ctx.path, name)) : link_as, *ctx.module);
+  auto f = llvm::Function::Create(ft, link_type, link_as.empty() ? (name.front() == '.' ? std::string_view(name) : concat(ctx.path, name)) : link_as, *ctx.module);;
   if (!f) return nullval;
   f->setCallingConv(cconv);
   {
     std::size_t i = 0;
     for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
   }
-  ctx.vars->insert(name, typed_value{f, types::function::get(t, std::move(args_t))});
+  ctx.vars->insert(name, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
   if (!is_extern) {
     if (name.front() == '.') {
       old_path = ctx.path;
@@ -1055,11 +1074,13 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     ctx.vars = new varmap(ctx.vars);
     for (std::size_t i = 0; i < args.size(); ++i) if (!args[i].first.empty()) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
     auto tv = body(ctx);
-    if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-    else {
-      auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
-      if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-      else ctx.builder.CreateRet(p);
+    if (t->kind != NULLTYPE) {
+      if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+      else {
+        auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
+        if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+        else ctx.builder.CreateRet(p);
+      }
     }
     auto vars = ctx.vars;
     ctx.vars = ctx.vars->parent;
@@ -1070,6 +1091,8 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
   }
   return nullval;
 }
+// keyvals.hpp
+typed_value cobalt::ast::null_ast::codegen(compile_context& ctx) const {return {nullptr, types::null::get()};}
 // literals.hpp
 typed_value cobalt::ast::integer_ast::codegen(compile_context& ctx) const {
   if (suffix.empty()) return {llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(*ctx.context), val), types::integer::get(0)};

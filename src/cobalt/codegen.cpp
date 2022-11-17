@@ -1269,7 +1269,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     else {
       auto t = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
       if (!t) return nullval;
-      auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
+      auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, ".co.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
       if (!f) return nullval;
       auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       if (name.front() == '.') {

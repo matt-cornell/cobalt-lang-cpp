@@ -1054,40 +1054,44 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     else ctx.flags.onerror(loc, "unknown annotation @" + ann, ERROR);
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  auto f = llvm::Function::Create(ft, link_type, link_as.empty() ? (name.front() == '.' ? std::string_view(name) : concat(ctx.path, name)) : link_as, *ctx.module);;
-  if (!f) return nullval;
-  f->setCallingConv(cconv);
-  {
-    std::size_t i = 0;
-    for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
-  }
-  ctx.vars->insert(name, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
-  if (!is_extern) {
-    if (name.front() == '.') {
-      old_path = ctx.path;
-      ctx.path = {name.substr(1)};
+  if (is_extern && !link_as.empty()) llvm::GlobalAlias::create(ft, 0, link_type, concat(ctx.path, name), llvm::cast<llvm::Function>(ctx.module->getOrInsertFunction(link_as, ft).getCallee()), ctx.module.get());
+  else {
+    auto f = llvm::Function::Create(ft, link_type, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);;
+    if (!f) return nullval;
+    f->setCallingConv(cconv);
+    {
+      std::size_t i = 0;
+      for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
     }
-    else ctx.path.push_back(name);
-    auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
-    auto ip = ctx.builder.GetInsertBlock();
-    ctx.builder.SetInsertPoint(bb);
-    ctx.vars = new varmap(ctx.vars);
-    for (std::size_t i = 0; i < args.size(); ++i) if (!args[i].first.empty()) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
-    auto tv = body(ctx);
-    if (t->kind != NULLTYPE) {
-      if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-      else {
-        auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
-        if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-        else ctx.builder.CreateRet(p);
+    ctx.vars->insert(name, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
+    if (!is_extern) {
+      if (name.front() == '.') {
+        old_path = ctx.path;
+        ctx.path = {name.substr(1)};
+      }
+      else ctx.path.push_back(name);
+      auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
+      auto ip = ctx.builder.GetInsertBlock();
+      ctx.builder.SetInsertPoint(bb);
+      ctx.vars = new varmap(ctx.vars);
+      for (std::size_t i = 0; i < args.size(); ++i) if (!args[i].first.empty()) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
+      auto tv = body(ctx);
+      if (t->kind != NULLTYPE) {
+        if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+        else {
+          auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
+          if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+          else ctx.builder.CreateRet(p);
+        }
+        auto vars = ctx.vars;
+        ctx.vars = ctx.vars->parent;
+        delete vars;
+        ctx.builder.SetInsertPoint(ip);
+        if (name.front() == '.') std::swap(ctx.path, old_path);
+        else ctx.path.pop_back();
+        if (!link_as.empty()) llvm::GlobalAlias::create(ft, 0, llvm::GlobalValue::ExternalLinkage, link_as, f, ctx.module.get());
       }
     }
-    auto vars = ctx.vars;
-    ctx.vars = ctx.vars->parent;
-    delete vars;
-    ctx.builder.SetInsertPoint(ip);
-    if (name.front() == '.') std::swap(ctx.path, old_path);
-    else ctx.path.pop_back();
   }
   return nullval;
 }

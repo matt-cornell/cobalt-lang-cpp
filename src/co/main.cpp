@@ -404,8 +404,8 @@ co help [category]
     auto toks = cobalt::tokenize(code, cobalt::sstring::get(input), flags);
     if (*critical) return cleanup<2>();
     cobalt::AST ast = cobalt::parse({toks.begin(), toks.end()}, flags);
-    cobalt::compile_context ctx{std::string(input)};
-    ast(cobalt::global);
+    cobalt::compile_context ctx{std::string(input), flags};
+    ast(ctx);
     std::error_code ec;
     llvm::raw_fd_ostream os({output}, ec);
     if (ec) {

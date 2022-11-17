@@ -1239,12 +1239,12 @@ std::vector<token> cobalt::tokenize(std::string_view code, location loc, flags_t
         case '>': {
           topb = true;
           char c2 = char((signed char)c);
-          if (out.size() && out.back().data == std::string_view{&c2, 1}) out.back().data.push_back(c2);
+          if (out.size() && out.back().data == std::string_view{&c2, 1} && out.back().data.back() == *(it - 2)) out.back().data.push_back(c2);
           else out.push_back({loc, {c2}});
         } break;
         case '=':
           topb = true;
-          if (out.size()) {
+          if (out.size() && out.back().data.back() == *(it - 2)) {
             if (out.back().data.size() == 1) switch (out.back().data.front()) {
               case '+':
               case '-':

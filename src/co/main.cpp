@@ -414,16 +414,21 @@ co help [category]
     }
     switch (output_type) {
       case LLVM:
-        os << *cobalt::global.module;
+        os << *ctx.module;
         break;
       case BC:
-        llvm::WriteBitcodeToFile(*cobalt::global.module, os);
+        llvm::WriteBitcodeToFile(*ctx.module, os);
         break;
-      default:
-        llvm::errs() << "only LLVM IR and bytecode outputs are currently supported\n";
-        return cleanup<1>();
-        break;
+      default: {
+        llvm::legacy::PassManager pm;
+        if (tm->addPassesToEmitFile(pm, os, nullptr, output_type == ASM ? llvm::CGFT_AssemblyFile : llvm::CGFT_ObjectFile)) {
+          llvm::errs() << "native compilation is not supported for this target\n";
+          return cleanup<4>();
+        }
+        pm.run(*ctx.module);
+      }
     }
+    os.flush();
     // TODO: AOT compiler
     return cleanup<0>();
   }

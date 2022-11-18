@@ -100,22 +100,76 @@ std::pair<sstring, span<token>::iterator> parse_type(span<token> code, flags_t f
       case ':':
       case ';':
       case ',':
-      case '*':
       case '/':
       case '%':
       case '!':
       case '~':
       case '+':
       case '-':
-      case '&':
       case '|':
-      case '^':
       case '<':
       case '>':
       case '=':
         flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
         goto PT_END;
         break;
+      case '&':
+      case '*':
+      case '^':
+        if (tok.size() > 1 && tok[1] != tok.front()) {
+          flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+          goto PT_END;
+        }
+        if (lwp) {
+          flags.onerror(it->loc, "type name cannot end with a period", ERROR);
+          name.pop_back();
+          name += tok;
+        }
+        else name += tok;
+        for (++it; it != end; ++it) {
+          std::string_view tok = it->data;
+          if (exit_chars.find(tok.front()) != std::string::npos) {
+            graceful = true;
+            goto PT_END;
+          }
+          switch (tok.front()) {
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case ':':
+            case ';':
+            case ',':
+            case '/':
+            case '%':
+            case '!':
+            case '~':
+            case '+':
+            case '-':
+            case '|':
+            case '<':
+            case '>':
+            case '=':
+              flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+              goto PT_END;
+              break;
+            case '&':
+            case '*':
+            case '^':
+              if (tok.size() > 1 && tok[1] != tok.front()) {
+                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+                goto PT_END;
+              }
+              name += tok;
+              break;
+            default:
+              flags.onerror(it->loc, "invalid characters after type suffix", ERROR);
+              goto PT_END;
+          }
+        }
+        goto PT_END;
       default:
         if (lwp == 0) {
           flags.onerror(it->loc, "type name cannot contain consecutive identifiers, did you forget a period?", ERROR);
@@ -144,6 +198,7 @@ AST parse_literals(span<token> code, flags_t flags) {
         return AST::create<ast::char_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
       case '"':
         return AST::create<ast::string_ast>(code.front().loc, std::string(tok.substr(1)), sstring::get(""));
+      case 'n': if (tok == "null") return AST::create<ast::null_ast>(code.front().loc);
       default:
         return AST::create<ast::varget_ast>(code.front().loc, sstring::get(tok));
     }
@@ -153,7 +208,7 @@ AST parse_literals(span<token> code, flags_t flags) {
   return AST::create<ast::varget_ast>(code.empty() ? location{sstring::get("<unknown>"), 0, 0} : code.front().loc, sstring::get(std::move(str)));
 }
 AST parse_groups(span<token> code, flags_t flags) {
-  if (code.empty()) return nullptr;
+  if (code.empty()) return AST::create<ast::null_ast>(nullloc);
   switch (code.front().data.front()) {
     case '(': {
       if (code.back().data.front() != ')') flags.onerror(code.front().loc, "unmatched opening parententhesis", ERROR);
@@ -202,7 +257,7 @@ AST parse_groups(span<token> code, flags_t flags) {
   }
 }
 AST parse_calls(span<token> code, flags_t flags) {
-  if (code.empty()) return AST(nullptr);
+  if (code.empty()) return AST::create<ast::null_ast>(nullloc);
   switch (code.back().data.front()) {
     case ')': {
       auto it = code.end() - 1, end = code.begin() - 1;
@@ -248,17 +303,17 @@ AST parse_calls(span<token> code, flags_t flags) {
   }
 }
 AST parse_postfix(span<token> code, flags_t flags) {
-  if (code.empty()) return AST(nullptr);
+  if (code.empty()) return AST::create<ast::null_ast>(nullloc);
   for (auto op : post_ops) if (code.back().data == op) return AST::create<ast::unop_ast>(code.back().loc, sstring::get((llvm::Twine("p") + op).str()), parse_postfix(code.subspan(0, code.size() - 1), flags));
   return parse_calls(code, flags);
 }
 AST parse_prefix(span<token> code, flags_t flags) {
-  if (code.empty()) return AST(nullptr);
+  if (code.empty()) return AST::create<ast::null_ast>(nullloc);
   for (auto op : pre_ops) if (code.front().data == op) return AST::create<ast::unop_ast>(code.front().loc, sstring::get(op), parse_prefix(code.subspan(1), flags));
   return parse_postfix(code, flags);
 }
 AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* start) {
-  if (code.empty()) return AST(nullptr);
+  if (code.empty()) return AST::create<ast::null_ast>(nullloc);
   binary_operator const* ptr = start;
   for (++ptr; ptr != bin_ops.end() && *ptr; ++ptr);
   span<binary_operator const> ops {start, ptr};
@@ -352,7 +407,7 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
   else return parse_ltr_infix(code, flags, ptr);
 }
 AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* start) {
-  if (code.empty()) return AST(nullptr);
+  if (code.empty()) return AST::create<ast::null_ast>(nullloc);
   binary_operator const* ptr = start;
   for (++ptr; ptr != bin_ops.end() && *ptr; ++ptr);
   span<binary_operator const> ops {start, ptr};
@@ -467,7 +522,7 @@ std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags
 }
 std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t flags) {
 #define UNSUPPORTED(TYPE) {flags.onerror(it->loc, TYPE " definitions are not currently supported", CRITICAL); return {AST(nullptr), code.begin() + 1};}
-  if (code.empty()) return {AST{nullptr}, code.end()};
+  if (code.empty()) return {AST::create<ast::null_ast>(nullloc), code.end()};
   auto it = code.begin(), end = code.end();
   std::string_view tok = it->data;
   std::vector<std::string> annotations;

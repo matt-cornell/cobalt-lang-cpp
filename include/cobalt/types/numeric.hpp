@@ -29,49 +29,52 @@ namespace cobalt::types {
     inline static std::unordered_map<int, std::unique_ptr<integer>> instances;
   };
   struct float16 : type_base {
-    sstring name() const override {return sstring::get("f16");}
+    sstring name() const override {return name_;}
     std::size_t size() const override {return 2;}
     std::size_t align() const override {return 2;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getHalfTy(*ctx.context);}
     static float16 const* get() {return &inst;}
   private:
     float16() : type_base(FLOAT) {}
-    static float16 inst;
+    const inline static sstring name_ = sstring::get("f16");
+    const static float16 inst;
   };
   struct float32 : type_base {
-    sstring name() const override {return sstring::get("f32");}
+    sstring name() const override {return name_;}
     std::size_t size() const override {return 4;}
     std::size_t align() const override {return 4;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getFloatTy(*ctx.context);}
     static float32 const* get() {return &inst;}
   private:
     float32() : type_base(FLOAT) {}
-    static float32 inst;
+    const inline static sstring name_ = sstring::get("f32");
+    const static float32 inst;
   };
   struct float64 : type_base {
-    sstring name() const override {return sstring::get("f64");}
+    sstring name() const override {return name_;}
     std::size_t size() const override {return 8;}
     std::size_t align() const override {return 8;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getDoubleTy(*ctx.context);}
     static float64 const* get() {return &inst;}
   private:
     float64() : type_base(FLOAT) {}
-    static float64 inst;
+    const inline static sstring name_ = sstring::get("f64");
+    const static float64 inst;
   };
   struct float128 : type_base {
-    sstring name() const override {return sstring::get("f128");}
+    sstring name() const override {return name_;}
     std::size_t size() const override {return 16;}
     std::size_t align() const override {return 8;}
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getFP128Ty(*ctx.context);}
     static float128 const* get() {return &inst;}
   private:
     float128() : type_base(FLOAT) {}
-    static float128 inst;
+    const inline static sstring name_ = sstring::get("f128");
+    const static float128 inst;
   };
-  // silence errors about incomplete types
-  inline float16 float16::inst;
-  inline float32 float32::inst;
-  inline float64 float64::inst;
-  inline float128 float128::inst;
+  const inline float16 float16::inst;
+  const inline float32 float32::inst;
+  const inline float64 float64::inst;
+  const inline float128 float128::inst;
 }
 #endif

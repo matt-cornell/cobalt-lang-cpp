@@ -1,6 +1,11 @@
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Host.h"
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
 constexpr char help[] = R"(co- Cobalt compiler and build tool
@@ -295,6 +300,7 @@ co help [category]
     std::vector<std::string_view> linked;
     enum {UNSPEC, LLVM, ASM, BC, OBJ} output_type = UNSPEC;
     enum {DEFAULT, QUIET, WERROR} error_type = DEFAULT;
+    auto triple = llvm::sys::getDefaultTargetTriple();
     for (char** it = argv + 2; it < argv + argc; ++it) {
       std::string_view cmd = *it;
       if (cmd.front() == '-') {
@@ -407,29 +413,55 @@ co help [category]
     cobalt::compile_context ctx{std::string(input), flags};
     ast(ctx);
     std::error_code ec;
-    llvm::raw_fd_ostream os({output}, ec);
-    if (ec) {
-      llvm::errs() << ec.message() << '\n';
-      return cleanup<3>();
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+    std::string err;
+    auto target = llvm::TargetRegistry::lookupTarget(triple, err);
+    if (!target) {
+      llvm::errs() << err << '\n';
+      return cleanup<1>();
     }
+    llvm::TargetOptions opt;
+    auto tm = target->createTargetMachine(triple, "generic", "", opt, llvm::Reloc::PIC_);
+    ctx.module->setDataLayout(tm->createDataLayout());
+    ctx.module->setTargetTriple(triple);
     switch (output_type) {
-      case LLVM:
+      case LLVM: {
+        llvm::raw_fd_ostream os({output}, ec);
+        if (ec) {
+          llvm::errs() << ec.message() << '\n';
+          return cleanup<3>();
+        }
         os << *ctx.module;
-        break;
-      case BC:
+        os.flush();
+      } break;
+      case BC: {
+        llvm::raw_fd_ostream os({output}, ec);
+        if (ec) {
+          llvm::errs() << ec.message() << '\n';
+          return cleanup<3>();
+        }
         llvm::WriteBitcodeToFile(*ctx.module, os);
-        break;
+        os.flush();
+      } break;
       default: {
+        llvm::raw_fd_ostream os({output}, ec);
+        if (ec) {
+          llvm::errs() << ec.message() << '\n';
+          return cleanup<3>();
+        }
         llvm::legacy::PassManager pm;
         if (tm->addPassesToEmitFile(pm, os, nullptr, output_type == ASM ? llvm::CGFT_AssemblyFile : llvm::CGFT_ObjectFile)) {
           llvm::errs() << "native compilation is not supported for this target\n";
           return cleanup<4>();
         }
         pm.run(*ctx.module);
+        os.flush();
       }
     }
-    os.flush();
-    // TODO: AOT compiler
     return cleanup<0>();
   }
   if (cmd == "jit") {

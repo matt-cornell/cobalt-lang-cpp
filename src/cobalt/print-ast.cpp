@@ -86,6 +86,10 @@ void cobalt::ast::fndef_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefi
   for (auto const& ann : annotations) os << prefix << "├── @" << ann << '\n';
   print_node(os, prefix, body, true);
 }
+// keyvals.hpp
+void cobalt::ast::null_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, "null");
+}
 // literals.hpp
 void cobalt::ast::integer_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   os << "int: " << val;

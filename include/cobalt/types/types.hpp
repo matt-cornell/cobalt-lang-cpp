@@ -10,7 +10,7 @@ namespace cobalt {
   struct compile_context;
   namespace types {
     struct type_base {
-      enum kind_t {INTEGER, FLOAT, POINTER, REFERENCE, FUNCTION, CUSTOM};
+      enum kind_t {INTEGER, FLOAT, POINTER, REFERENCE, FUNCTION, NULLTYPE, CUSTOM};
       const kind_t kind;
       type_base(kind_t kind) : kind(kind) {}
       type_base(type_base const&) = delete;

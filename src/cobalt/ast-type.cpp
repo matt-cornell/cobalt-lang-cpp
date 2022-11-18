@@ -2,7 +2,7 @@
 #include "cobalt/types.hpp"
 using namespace cobalt;
 using enum types::type_base::kind_t;
-const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool");
+const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool"), null = sstring::get("null");
 type_ptr get_call(type_ptr t, std::vector<type_ptr> const& args) {return nullptr;}
 type_ptr get_sub(type_ptr t, std::vector<type_ptr> const& args) {
   switch (t->kind) {
@@ -28,6 +28,7 @@ type_ptr get_unary(type_ptr t, sstring op) {
     case REFERENCE:
       if (op == "&") return types::pointer::get(static_cast<types::reference const*>(t)->base);
       return get_unary(static_cast<types::reference const*>(t), op);
+    case NULLTYPE: return nullptr;
     case FUNCTION:
       if (op == "&") return t;
       return nullptr;
@@ -65,6 +66,7 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case FLOAT: switch (rhs->kind) {
@@ -77,6 +79,7 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
       case POINTER: return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case POINTER: switch (rhs->kind) {
@@ -89,10 +92,12 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
       case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case REFERENCE: return get_binary(static_cast<types::reference const*>(lhs)->base, rhs, op);
     case FUNCTION: return nullptr;
+    case NULLTYPE: return nullptr;
     case CUSTOM: return nullptr;
   }
 }
@@ -100,7 +105,9 @@ static type_ptr get_call(type_ptr self, std::vector<type_ptr>&& args) {
   switch (self->kind) {
     case INTEGER:
     case FLOAT:
-    case POINTER: return nullptr;
+    case POINTER:
+    case NULLTYPE:
+      return nullptr;
     case REFERENCE: return get_call(static_cast<types::reference const*>(self)->base, args);
     case FUNCTION:
       return static_cast<types::function const*>(self)->ret;
@@ -115,6 +122,7 @@ static type_ptr parse_type(sstring str) {
     case '^': return types::borrow::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
   }
   if (str == bool_) return types::integer::get(1);
+  if (str == null) return types::null::get();
   switch (str.front()) {
     case 'i':
       if (str == isize) return types::integer::get(sizeof(void*) * 8, false);
@@ -188,6 +196,8 @@ type_ptr cobalt::ast::call_ast::type(base_context& ctx) const {
   return get_call(t, targs);
 }
 type_ptr cobalt::ast::fndef_ast::type(base_context& ctx) const {(void)ctx; return nullptr;}
+// keyvals.hpp
+type_ptr cobalt::ast::null_ast::type(base_context& ctx) const {(void)ctx; return types::null::get();}
 // literals.hpp
 type_ptr cobalt::ast::integer_ast::type(base_context& ctx) const {
   if (suffix.empty()) return types::integer::get(0);

@@ -8,6 +8,10 @@
 #include "llvm/Support/Host.h"
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
+#ifndef _WIN32
+#include <unistd.h>
+#include <wait.h>
+#endif
 constexpr char help[] = R"(co- Cobalt compiler and build tool
 subcommands:
 co aot: compile file
@@ -447,6 +451,54 @@ co help [category]
         llvm::WriteBitcodeToFile(*ctx.module, os);
         os.flush();
       } break;
+      #ifndef _WIN32
+      case UNSPEC: {
+        char fname[] = "/tmp/co-tmpXXXXXX.o\0-static\0-o";
+        auto fd = mkstemps(fname, 2);
+        llvm::raw_fd_ostream bos(fd, true);
+        llvm::legacy::PassManager pm;
+        if (tm->addPassesToEmitFile(pm, bos, nullptr, output_type == ASM ? llvm::CGFT_AssemblyFile : llvm::CGFT_ObjectFile)) {
+          llvm::errs() << "native compilation is not supported for this target\n";
+          return cleanup<4>();
+        }
+        pm.run(*ctx.module);
+        std::vector<char*> args(linked.size() + 6);
+        std::string owner{output};
+        char pgm_name[6];
+        args[0] = pgm_name;
+        args[1] = fname;
+        args[2] = fname + 20;
+        args[3] = fname + 28;
+        args[4] = owner.data();
+        {
+          std::size_t idx = 4;
+          char* ptr = owner.data() + output.size() + 1;
+          for (auto l : linked) {
+            owner.push_back(0);
+            owner += "-l";
+            owner += l;
+            args[++idx] = ptr;
+            ptr += l.size() + 3;
+          }
+        }
+        args.back() = nullptr;
+        int pid = fork();
+        if (!pid) {
+          std::memset(pgm_name, 0, 6);
+          std::strcpy(pgm_name, "cc");
+          execvp("cc", args.data());
+          std::memset(pgm_name, 0, 6);
+          std::strcpy(pgm_name, "clang");
+          execvp("clang", args.data());
+          std::memset(pgm_name, 0, 6);
+          std::strcpy(pgm_name, "gcc");
+          llvm::errs() << "couldn't find C compiler (cc, gcc, clang) to link\n";
+          return cleanup<5>();
+        }
+        wait(nullptr);
+        std::remove(fname);
+      } break;
+      #endif
       default: {
         llvm::raw_fd_ostream os({output}, ec);
         if (ec) {

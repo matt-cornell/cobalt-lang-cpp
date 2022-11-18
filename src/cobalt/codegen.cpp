@@ -1284,24 +1284,27 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
       if (!tv.type) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
-      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
+      auto ct = tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type;
+      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
     else {
-      auto t = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
-      if (!t) return nullval;
-      auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, ".co.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
+      auto ft = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
+      if (!ft) return nullval;
+      auto f = llvm::Function::Create(ft, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
       if (!f) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      auto rt = val.type(ctx);
+      auto ct = rt->kind == INTEGER && !static_cast<types::integer const*>(rt)->nbits ? types::integer::get(64) : rt;
+      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
+      ctx.builder.SetInsertPoint(bb);
       if (name.front() == '.') {
         old_path = ctx.path;
         ctx.path = {name.substr(1)};
       }
       else ctx.path.push_back(name);
-      auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
-      ctx.builder.SetInsertPoint(bb);
       auto tv = val(ctx);
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
@@ -1310,9 +1313,9 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
         gv->eraseFromParent();
         return nullval;
       }
-      ctx.builder.CreateStore(gv, tv.value);
+      ctx.builder.CreateStore(tv.value, gv);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
-      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
+      auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
@@ -1372,17 +1375,20 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
       if (!tv.type) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, tv.type->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
-      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
+      auto ct = tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type;
+      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }
     else {
-      auto t = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
-      if (!t) return nullval;
-      auto f = llvm::Function::Create(t, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
+      auto ft = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx.context), false);
+      if (!ft) return nullval;
+      auto f = llvm::Function::Create(ft, llvm::GlobalValue::LinkageTypes::PrivateLinkage, "global.init." + llvm::Twine(ctx.init_count++), ctx.module.get());
       if (!f) return nullval;
-      auto gv = new llvm::GlobalVariable(*ctx.module, val.type(ctx)->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      auto rt = val.type(ctx);
+      auto ct = rt->kind == INTEGER && !static_cast<types::integer const*>(rt)->nbits ? types::integer::get(64) : rt;
+      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), false, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
       ctx.builder.SetInsertPoint(bb);
       if (name.front() == '.') {
@@ -1400,7 +1406,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
       }
       ctx.builder.CreateStore(tv.value, gv);
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
-      auto type = types::reference::get(tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type);
+      auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
     }

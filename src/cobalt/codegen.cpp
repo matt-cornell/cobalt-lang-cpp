@@ -1278,7 +1278,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   auto local = name.substr(old);
   std::vector<std::string_view> old_path;
   std::string_view link_as = "";
-  llvm::GlobalValue::LinkageTypes link_type = llvm::GlobalValue::ExternalLinkage;
+  llvm::GlobalValue::LinkageTypes link_type = global ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::PrivateLinkage;
   bool ltset = false, is_static = false;
   for (auto const& ann : annotations) {
     if (ann.starts_with("static(")) {

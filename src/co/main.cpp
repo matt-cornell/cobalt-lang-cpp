@@ -453,7 +453,7 @@ co help [category]
       } break;
       #ifndef _WIN32
       case UNSPEC: {
-        char fname[] = "/tmp/co-tmpXXXXXX.o\0-static\0-o";
+        char fname[] = "/tmp/co-tmpXXXXXX.o\0-o";
         auto fd = mkstemps(fname, 2);
         llvm::raw_fd_ostream bos(fd, true);
         llvm::legacy::PassManager pm;
@@ -462,26 +462,29 @@ co help [category]
           return cleanup<4>();
         }
         pm.run(*ctx.module);
-        std::vector<char*> args(linked.size() + 6);
+        std::vector<char*> args(linked.size() + 5);
         std::string owner{output};
+        owner.push_back(0);
         char pgm_name[6];
         args[0] = pgm_name;
         args[1] = fname;
         args[2] = fname + 20;
-        args[3] = fname + 28;
-        args[4] = owner.data();
         {
-          std::size_t idx = 4;
-          char* ptr = owner.data() + output.size() + 1;
+          std::vector<std::size_t> offsets(linked.size());
+          std::size_t idx = 0;
+          std::size_t off = output.size() + 1;
           for (auto l : linked) {
-            owner.push_back(0);
             owner += "-l";
             owner += l;
-            args[++idx] = ptr;
-            ptr += l.size() + 3;
+            owner.push_back(0);
+            offsets[idx++] = off;
+            off += l.size() + 3;
           }
+          args[3] = owner.data();
+          idx = 3;
+          for (auto o : offsets) args[++idx] = owner.data() + o;
+          args.back() = nullptr;
         }
-        args.back() = nullptr;
         int pid = fork();
         if (!pid) {
           std::memset(pgm_name, 0, 6);

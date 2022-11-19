@@ -1,8 +1,17 @@
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Host.h"
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
+#ifndef _WIN32
+#include <unistd.h>
+#include <wait.h>
+#endif
 constexpr char help[] = R"(co- Cobalt compiler and build tool
 subcommands:
 co aot: compile file
@@ -64,6 +73,8 @@ void pretty_print(llvm::raw_ostream& os, std::size_t sz, cobalt::token const& to
   os << '\n';
 }
 template <int code> int cleanup() {llvm::errs().flush(); return code;}
+llvm::raw_ostream& warn() {return llvm::errs().changeColor(llvm::raw_ostream::YELLOW, true).write("warning: ", 9).resetColor();}
+llvm::raw_ostream& err() {return llvm::errs().changeColor(llvm::raw_ostream::RED, true).write("error: ", 7).resetColor();}
 int main(int argc, char** argv) {
   if (argc == 1) {
     llvm::outs() << help;
@@ -84,10 +95,10 @@ int main(int argc, char** argv) {
         else if (cmd == "build") {llvm::outs() << build_help; return cleanup<0>();}
         else if (cmd == "tokenize") {llvm::outs() << tokenize_help; return cleanup<0>();}
         else if (cmd == "parse") {llvm::outs() << parse_help; return cleanup<0>();}
-        else {llvm::errs() << "unknown subcommand '" << cmd << "'\n"; return cleanup<1>();}
+        else {err() << "unknown subcommand '" << cmd << "'\n"; return cleanup<1>();}
       }
       default:
-        llvm::errs() << R"###(help option must be used as:
+        err() << R"###(help option must be used as:
 co help or
 co help [category]
 )###";
@@ -110,7 +121,7 @@ co help [category]
         auto eo = llvm::MemoryBuffer::getFileOrSTDIN(file);
         if (eo) toks = cobalt::tokenize(eo.get()->getBuffer(), cobalt::sstring::get(file == "-" ? "<stdin>" : file), flags);
         else {
-          llvm::errs() << eo.getError().message() << '\n';
+          err() << "error opening " << file << ": " << eo.getError().message() << '\n';
           fail = true;
         }
       }
@@ -135,7 +146,7 @@ co help [category]
         auto eo = llvm::MemoryBuffer::getFileOrSTDIN(file);
         if (eo) toks = cobalt::tokenize(eo.get()->getBuffer(), cobalt::sstring::get(file == "-" ? "<stdin>" : file), flags);
         else {
-          llvm::errs() << eo.getError().message() << '\n';
+          err() << "error opening " << file << ": " << eo.getError().message() << '\n';
           fail = true;
         }
       }
@@ -158,7 +169,7 @@ co help [category]
         if (flag.front() == '-') {
           flag.remove_prefix(1);
           if (flag == "markdown") {
-            if (markdown) llvm::errs() << "reuse of --markdown flag\n";
+            if (markdown) warn() << "reuse of --markdown flag\n";
             else markdown = true;
           }
           else {
@@ -170,22 +181,22 @@ co help [category]
           case 'c':
             code_set = true;
             if (++it == argv + argc) {
-              llvm::errs() << "unspecified input for -c flag\n";
+              err() << "unspecified input for -c flag\n";
               return cleanup<1>();
             }
             code = *it;
             break;
           case 'm':
-            if (markdown) llvm::errs() << "reuse of -m flag\n";
+            if (markdown) warn() << "reuse of -m flag\n";
             else markdown = true;
             break;
           case 'o':
             if (output.size()) {
-              llvm::errs() << "redefinition of output file\n";
+              err() << "redefinition of output file\n";
               return cleanup<1>();
             }
             if (++it == argv + argc) {
-              llvm::errs() << "unspecified output file\n";
+              err() << "unspecified output file\n";
               return cleanup<1>();
             }
             output = *it;
@@ -197,27 +208,29 @@ co help [category]
       }
       else {
         if (code_set) {
-          llvm::errs() << "redefiniton of input\n";
+          err() << "redefiniton of input\n";
           return cleanup<1>();
         }
         code_set = true;
         source = flag;
         auto f = llvm::MemoryBuffer::getFileOrSTDIN(flag, true, false);
         if (!f) {
-          llvm::errs() << f.getError().message();
+          err() << "error opening " << flag << ": " << eo.getError().message() << '\n';
           return cleanup<1>();
         }
         code = f.get()->getBuffer();
       }
     }
     if (!code_set) {
-      llvm::errs() << "no input for debug\n";
+      err() << "no input for debug\n";
       return cleanup<1>();
     }
     std::error_code ec;
     llvm::raw_fd_ostream os({output.empty() ? (std::string(source.empty() ? "cmdline" : (source == "-" ? "stdin" : source)) + (markdown ? ".md" : ".out")) : output}, ec);
     if (ec) {
-      llvm::errs() << ec.message() << '\n';
+      if (output.empty()) err() << markdown ? "error opening cmdline.md: " : "error opening cmdline.out: " << eo.getError().message() << '\n';
+      else if (output == "-") err() << markdown ? "error opening stdin.md: " : "error opening stdin.out: " << eo.getError().message() << '\n';
+      else err() << "error opening " << output << ": " << eo.getError().message() << '\n';
       return cleanup<3>();
     }
     cobalt::flags_t flags;
@@ -290,18 +303,20 @@ co help [category]
     return cleanup<0>();
   }
   if (cmd == "aot") {
-    std::string_view input = "", output = "";
+    std::string_view input = "";
+    std::string output = "";
     std::uint8_t opt_lvl = -1;
     std::vector<std::string_view> linked;
     enum {UNSPEC, LLVM, ASM, BC, OBJ} output_type = UNSPEC;
     enum {DEFAULT, QUIET, WERROR} error_type = DEFAULT;
+    auto triple = llvm::sys::getDefaultTargetTriple();
     for (char** it = argv + 2; it < argv + argc; ++it) {
       std::string_view cmd = *it;
       if (cmd.front() == '-') {
         cmd.remove_prefix(1);
         if (cmd.empty()) {
           if (!input.empty()) {
-            llvm::errs() << "redefinition of input file\n";
+            err() << "redefinition of input file\n";
             return cleanup<1>();
           }
           input = "-";
@@ -317,55 +332,55 @@ co help [category]
               else if (cmd == "bc" || cmd == "bitcode") output_type = BC;
               else if (cmd == "obj" || cmd == "object") output_type = OBJ;
               else {
-                llvm::errs() << "unknown flag --emit-" << cmd << '\n';
+                err() << "unknown flag --emit-" << cmd << '\n';
                 return cleanup<1>();
               }
-              if (spec) llvm::errs() << "redefinition of output type\n";
+              if (spec) warn() << "redefinition of output type\n";
             }
             else if (cmd == "quiet") {
-              if (error_type != DEFAULT) llvm::errs() << "redefinition or override of error mode\n";
+              if (error_type != DEFAULT) warn() << "redefinition or override of error mode\n";
               error_type = QUIET;
             }
             else if (cmd == "werrror") {
-              if (error_type != DEFAULT) llvm::errs() << "redefinition or override of error mode\n";
+              if (error_type != DEFAULT) warn() << "redefinition or override of error mode\n";
               error_type = WERROR;
             }
             else {
-              llvm::errs() << "unkown flag --" << cmd << '\n';
+              err() << "unkown flag --" << cmd << '\n';
               return cleanup<1>();
             }
             break;
           case 'O':
             if (cmd.size() > 2) {
-              llvm::errs() << "optimization level should be a single-digit number\n";
+              err() << "optimization level should be a single-digit number\n";
               return cleanup<1>();
             }
-            if (opt_lvl != 255) llvm::errs() << "redefinition of optimization level\n";
+            if (opt_lvl != 255) warn() << "redefinition of optimization level\n";
             if (cmd[1] < '0' || cmd[1] > '9') {
-              llvm::errs() << "invalid value for optimization level\n";
+              err() << "invalid value for optimization level\n";
               return cleanup<1>();
             }
             opt_lvl = cmd[1] - '0';
             break;
           default:
             for (char c : cmd) switch (c) {
-              case 'O': llvm::errs() << "-O flag must not be specified with any other flags\n"; return cleanup<1>();
+              case 'O': err() << "-O flag must not be specified with any other flags\n"; return cleanup<1>();
               case 'l':
                 ++it;
                 if (it == argv + argc) {
-                  llvm::errs() << "unspecified linked library\n";
+                  err() << "unspecified linked library\n";
                   return cleanup<1>();
                 }
                 linked.push_back(*it);
                 break;
               case 'o':
                 if (!output.empty()) {
-                  llvm::errs() << "redefinition of output file\n";
+                  err() << "redefinition of output file\n";
                   return cleanup<1>();
                 }
                 ++it;
                 if (it == argv + argc) {
-                  llvm::errs() << "unspecified output file\n";
+                  err() << "unspecified output file\n";
                   return cleanup<1>();
                 }
                 output = *it;
@@ -375,16 +390,55 @@ co help [category]
       }
       else {
         if (!input.empty()) {
-          llvm::errs() << "redefinition of input file\n";
+          err() << "redefinition of input file\n";
           return cleanup<1>();
         }
         input = cmd;
       }
     }
+    if (input.empty()) {
+      err() << "input file not specified\n";
+      return cleanup<1>();
+    }
+    if (output.empty()) switch (output_type) {
+      case UNSPEC: output = "a.out"; break;
+      case ASM:
+        if (input == "-") output = "cmdline.s";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "s";
+        }
+        break;
+      case LLVM:
+        if (input == "-") output = "cmdline.ll";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "ll";
+        }
+        break;
+      case BC:
+        if (input == "-") output = "cmdline.bc";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "bc";
+        }
+        break;
+      case OBJ:
+        if (input == "-") output = "cmdline.o";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "o";
+        }
+        break;
+    }
     auto f = llvm::MemoryBuffer::getFileOrSTDIN(input, true, false);
     if (input == "-") input = "<stdin>";
     if (!f) {
-      llvm::errs() << input << ": " << f.getError().message() << '\n';
+      err() << "error opening " << input << ": " << f.getError().message() << '\n';
       return cleanup<1>();
     }
     std::string_view code{f.get()->getBuffer().data(), f.get()->getBufferSize()};
@@ -404,27 +458,109 @@ co help [category]
     auto toks = cobalt::tokenize(code, cobalt::sstring::get(input), flags);
     if (*critical) return cleanup<2>();
     cobalt::AST ast = cobalt::parse({toks.begin(), toks.end()}, flags);
-    cobalt::compile_context ctx{std::string(input)};
-    ast(cobalt::global);
+    cobalt::compile_context ctx{std::string(input), flags};
+    ast(ctx);
     std::error_code ec;
-    llvm::raw_fd_ostream os({output}, ec);
-    if (ec) {
-      llvm::errs() << ec.message() << '\n';
-      return cleanup<3>();
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+    std::string err;
+    auto target = llvm::TargetRegistry::lookupTarget(triple, err);
+    if (!target) {
+      err() << "error initializing target: " << err << '\n';
+      return cleanup<1>();
     }
+    llvm::TargetOptions opt;
+    auto tm = target->createTargetMachine(triple, "generic", "", opt, llvm::Reloc::PIC_);
+    ctx.module->setDataLayout(tm->createDataLayout());
+    ctx.module->setTargetTriple(triple);
     switch (output_type) {
-      case LLVM:
-        os << *cobalt::global.module;
-        break;
-      case BC:
-        llvm::WriteBitcodeToFile(*cobalt::global.module, os);
-        break;
-      default:
-        llvm::errs() << "only LLVM IR and bytecode outputs are currently supported\n";
-        return cleanup<1>();
-        break;
+      case LLVM: {
+        llvm::raw_fd_ostream os({output}, ec);
+        if (ec) {
+          err() << "error opening " << output << ": " << ec.message() << '\n';
+          return cleanup<3>();
+        }
+        os << *ctx.module;
+        os.flush();
+      } break;
+      case BC: {
+        llvm::raw_fd_ostream os({output}, ec);
+        if (ec) {
+          err() << "error opening " << output << ": " << ec.message() << '\n';
+          return cleanup<3>();
+        }
+        llvm::WriteBitcodeToFile(*ctx.module, os);
+        os.flush();
+      } break;
+      #ifndef _WIN32
+      case UNSPEC: {
+        char fname[] = "/tmp/co-tmpXXXXXX.o\0-o";
+        auto fd = mkstemps(fname, 2);
+        llvm::raw_fd_ostream bos(fd, true);
+        llvm::legacy::PassManager pm;
+        if (tm->addPassesToEmitFile(pm, bos, nullptr, output_type == ASM ? llvm::CGFT_AssemblyFile : llvm::CGFT_ObjectFile)) {
+          err() << "native compilation is not supported for this target\n";
+          return cleanup<4>();
+        }
+        pm.run(*ctx.module);
+        std::vector<char*> args(linked.size() + 5);
+        std::string owner{output};
+        owner.push_back(0);
+        char pgm_name[6];
+        args[0] = pgm_name;
+        args[1] = fname;
+        args[2] = fname + 20;
+        {
+          std::vector<std::size_t> offsets(linked.size());
+          std::size_t idx = 0;
+          std::size_t off = output.size() + 1;
+          for (auto l : linked) {
+            owner += "-l";
+            owner += l;
+            owner.push_back(0);
+            offsets[idx++] = off;
+            off += l.size() + 3;
+          }
+          args[3] = owner.data();
+          idx = 3;
+          for (auto o : offsets) args[++idx] = owner.data() + o;
+          args.back() = nullptr;
+        }
+        int pid = fork();
+        if (!pid) {
+          std::memset(pgm_name, 0, 6);
+          std::strcpy(pgm_name, "cc");
+          execvp("cc", args.data());
+          std::memset(pgm_name, 0, 6);
+          std::strcpy(pgm_name, "clang");
+          execvp("clang", args.data());
+          std::memset(pgm_name, 0, 6);
+          std::strcpy(pgm_name, "gcc");
+          err() << "couldn't find C compiler (cc, gcc, clang) to link\n";
+          return cleanup<5>();
+        }
+        wait(nullptr);
+        std::remove(fname);
+      } break;
+      #endif
+      default: {
+        llvm::raw_fd_ostream os({output}, ec);
+        if (ec) {
+          llvm::errs() << ec.message() << '\n';
+          return cleanup<3>();
+        }
+        llvm::legacy::PassManager pm;
+        if (tm->addPassesToEmitFile(pm, os, nullptr, output_type == ASM ? llvm::CGFT_AssemblyFile : llvm::CGFT_ObjectFile)) {
+          err() << "native compilation is not supported for this target\n";
+          return cleanup<4>();
+        }
+        pm.run(*ctx.module);
+        os.flush();
+      }
     }
-    // TODO: AOT compiler
     return cleanup<0>();
   }
   if (cmd == "jit") {
@@ -432,6 +568,6 @@ co help [category]
 
     return cleanup<0>();
   }
-  llvm::errs() << "unknown command '" << cmd << "'\n";
+  err() << "unknown command '" << cmd << "'\n";
   return cleanup<1>();
 }

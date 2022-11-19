@@ -609,11 +609,12 @@ std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t 
 #define UNSUPPORTED(TYPE) {flags.onerror(it->loc, TYPE " definitions are not currently supported", CRITICAL); return {AST(nullptr), code.begin() + 1};}
   if (code.empty()) return {AST::create<ast::null_ast>(nullloc), code.end()};
   auto it = code.begin(), end = code.end();
-  std::string_view tok = it->data;
   std::vector<std::string> annotations;
+  ST_BEGIN:
+  std::string_view tok = it->data;
   switch (tok.front()) {
     case ';': break;
-    case '@': annotations.push_back(std::string(tok.substr(1))); break;
+    case '@': annotations.push_back(std::string(tok.substr(1))); ++it; goto ST_BEGIN;
     case 'c':
       if (tok == "cr") UNSUPPORTED("coroutine")
       else goto ST_DEFAULT;

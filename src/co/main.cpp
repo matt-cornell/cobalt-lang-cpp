@@ -1,17 +1,8 @@
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
-#include "llvm/ExecutionEngine/Orc/LLJIT.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/MC/TargetRegistry.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/Host.h"
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
-#ifndef _WIN32
-#include <unistd.h>
-#include <wait.h>
-#endif
 constexpr char help[] = R"(co- Cobalt compiler and build tool
 subcommands:
 co aot: compile file
@@ -303,13 +294,11 @@ co help [category]
     return cleanup<0>();
   }
   if (cmd == "aot") {
-    std::string_view input = "";
-    std::string output = "";
+    std::string_view input = "", output = "";
     std::uint8_t opt_lvl = -1;
     std::vector<std::string_view> linked;
     enum {UNSPEC, LLVM, ASM, BC, OBJ} output_type = UNSPEC;
     enum {DEFAULT, QUIET, WERROR} error_type = DEFAULT;
-    auto triple = llvm::sys::getDefaultTargetTriple();
     for (char** it = argv + 2; it < argv + argc; ++it) {
       std::string_view cmd = *it;
       if (cmd.front() == '-') {
@@ -458,8 +447,8 @@ co help [category]
     auto toks = cobalt::tokenize(code, cobalt::sstring::get(input), flags);
     if (*critical) return cleanup<2>();
     cobalt::AST ast = cobalt::parse({toks.begin(), toks.end()}, flags);
-    cobalt::compile_context ctx{std::string(input), flags};
-    ast(ctx);
+    cobalt::compile_context ctx{std::string(input)};
+    ast(cobalt::global);
     std::error_code ec;
     llvm::InitializeAllTargetInfos();
     llvm::InitializeAllTargets();
@@ -472,10 +461,6 @@ co help [category]
       error() << "error initializing target: " << err << '\n';
       return cleanup<1>();
     }
-    llvm::TargetOptions opt;
-    auto tm = target->createTargetMachine(triple, "generic", "", opt, llvm::Reloc::PIC_);
-    ctx.module->setDataLayout(tm->createDataLayout());
-    ctx.module->setTargetTriple(triple);
     switch (output_type) {
       case LLVM: {
         llvm::raw_fd_ostream os({output}, ec);
@@ -561,7 +546,18 @@ co help [category]
         pm.run(*ctx.module);
         os.flush();
       }
+      case LLVM:
+        os << *cobalt::global.module;
+        break;
+      case BC:
+        llvm::WriteBitcodeToFile(*cobalt::global.module, os);
+        break;
+      default:
+        llvm::errs() << "only LLVM IR and bytecode outputs are currently supported\n";
+        return cleanup<1>();
+        break;
     }
+    // TODO: AOT compiler
     return cleanup<0>();
   }
   if (cmd == "jit") {

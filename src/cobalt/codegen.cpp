@@ -1054,40 +1054,44 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     else ctx.flags.onerror(loc, "unknown annotation @" + ann, ERROR);
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  auto f = llvm::Function::Create(ft, link_type, link_as.empty() ? (name.front() == '.' ? std::string_view(name) : concat(ctx.path, name)) : link_as, *ctx.module);;
-  if (!f) return nullval;
-  f->setCallingConv(cconv);
-  {
-    std::size_t i = 0;
-    for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
-  }
-  ctx.vars->insert(name, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
-  if (!is_extern) {
-    if (name.front() == '.') {
-      old_path = ctx.path;
-      ctx.path = {name.substr(1)};
+  if (is_extern && !link_as.empty()) llvm::GlobalAlias::create(ft, 0, link_type, concat(ctx.path, name), llvm::cast<llvm::Function>(ctx.module->getOrInsertFunction(link_as, ft).getCallee()), ctx.module.get());
+  else {
+    auto f = llvm::Function::Create(ft, link_type, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);;
+    if (!f) return nullval;
+    f->setCallingConv(cconv);
+    {
+      std::size_t i = 0;
+      for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
     }
-    else ctx.path.push_back(name);
-    auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
-    auto ip = ctx.builder.GetInsertBlock();
-    ctx.builder.SetInsertPoint(bb);
-    ctx.vars = new varmap(ctx.vars);
-    for (std::size_t i = 0; i < args.size(); ++i) if (!args[i].first.empty()) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
-    auto tv = body(ctx);
-    if (t->kind != NULLTYPE) {
-      if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-      else {
-        auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
-        if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
-        else ctx.builder.CreateRet(p);
+    ctx.vars->insert(name, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
+    if (!is_extern) {
+      if (name.front() == '.') {
+        old_path = ctx.path;
+        ctx.path = {name.substr(1)};
+      }
+      else ctx.path.push_back(name);
+      auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
+      auto ip = ctx.builder.GetInsertBlock();
+      ctx.builder.SetInsertPoint(bb);
+      ctx.vars = new varmap(ctx.vars);
+      for (std::size_t i = 0; i < args.size(); ++i) if (!args[i].first.empty()) ctx.vars->insert(args[i].first, typed_value{f->getArg(i), args_t[i]});
+      auto tv = body(ctx);
+      if (t->kind != NULLTYPE) {
+        if (!tv.type) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+        else {
+          auto p = impl_convert(tv.value, tv.type, t, loc, ctx);
+          if (!p) ctx.builder.CreateRet(llvm::Constant::getNullValue(t->llvm_type(loc, ctx)));
+          else ctx.builder.CreateRet(p);
+        }
+        auto vars = ctx.vars;
+        ctx.vars = ctx.vars->parent;
+        delete vars;
+        ctx.builder.SetInsertPoint(ip);
+        if (name.front() == '.') std::swap(ctx.path, old_path);
+        else ctx.path.pop_back();
+        if (!link_as.empty()) llvm::GlobalAlias::create(ft, 0, llvm::GlobalValue::ExternalLinkage, link_as, f, ctx.module.get());
       }
     }
-    auto vars = ctx.vars;
-    ctx.vars = ctx.vars->parent;
-    delete vars;
-    ctx.builder.SetInsertPoint(ip);
-    if (name.front() == '.') std::swap(ctx.path, old_path);
-    else ctx.path.pop_back();
   }
   return nullval;
 }
@@ -1273,7 +1277,37 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
   }
   auto local = name.substr(old);
   std::vector<std::string_view> old_path;
-  if (global) {
+  std::string_view link_as = "";
+  llvm::GlobalValue::LinkageTypes link_type = global ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::PrivateLinkage;
+  bool ltset = false, is_static = false;
+  for (auto const& ann : annotations) {
+    if (ann.starts_with("static(")) {
+      if (global) ctx.flags.onerror(loc, "@static annotation cannot be used on a global variable", ERROR);
+      if (ann.size() != 8) ctx.flags.onerror(loc, "@static annotation should be used without arguments", ERROR);
+      if (is_static) ctx.flags.onerror(loc, "reuse of @static annotation", ERROR);
+      is_static = true;
+    }
+    else if (ann.starts_with("linkas(")) {
+      if (!link_as.empty()) ctx.flags.onerror(loc, "reuse of @linkas annotation", ERROR);
+      link_as = std::string_view{ann.data() + 7, ann.size() - 8};
+      if (link_as.empty()) ctx.flags.onerror(loc, "@linkas must be used with arguments", ERROR);
+    }
+    else if (ann.starts_with("link(")) {
+      if (ltset) ctx.flags.onerror(loc, "reuse of @link annotation", ERROR);
+      auto lt = std::string_view{ann.data() + 5, ann.size() - 6};
+      if (lt.empty()) ctx.flags.onerror(loc, "@link must be used with arguments", ERROR);
+      ltset = true;
+      if (lt == "external" || lt == "extern") link_type = llvm::GlobalValue::ExternalLinkage;
+      else if (lt == "weak_any" || lt == "weak-any" || lt == "weak any") link_type = llvm::GlobalValue::WeakAnyLinkage;
+      else if (lt == "weak_odr" || lt == "weak-odr" || lt == "weak odr" || lt == "weak ODR") link_type = llvm::GlobalValue::WeakODRLinkage;
+      else if (lt == "internal" || lt == "intern") link_type = llvm::GlobalValue::InternalLinkage;
+      else if (lt == "private") link_type = llvm::GlobalValue::PrivateLinkage;
+      else if (lt == "weak" || lt == "extern_weak" || lt == "extern-weak" || lt == "extern weak" || lt == "external_weak" || lt == "external-weak" || lt == "external weak") link_type = llvm::GlobalValue::ExternalWeakLinkage;
+      else ctx.flags.onerror(loc, (llvm::Twine("unknown linkage type '") + lt + "'").str(), ERROR);
+    }
+    else ctx.flags.onerror(loc, "unknown annotation @" + ann, ERROR);
+  }
+  if (global || is_static) {
     if (val.is_const()) {
       if (name.front() == '.') {
         old_path = ctx.path;
@@ -1285,7 +1319,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       else ctx.path.pop_back();
       if (!tv.type) return nullval;
       auto ct = tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type;
-      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), true, link_type, llvm::cast<llvm::Constant>(tv.value), name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});
       return {gv, type};
@@ -1297,7 +1331,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
       if (!f) return nullval;
       auto rt = val.type(ctx);
       auto ct = rt->kind == INTEGER && !static_cast<types::integer const*>(rt)->nbits ? types::integer::get(64) : rt;
-      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), true, llvm::GlobalValue::LinkageTypes::ExternalLinkage, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
+      auto gv = new llvm::GlobalVariable(*ctx.module, ct->llvm_type(loc, ctx), true, link_type, nullptr, name.front() == '.' ? std::string_view(name) : std::string_view(concat(ctx.path, name)));
       auto bb = llvm::BasicBlock::Create(*ctx.context, "entry", f);
       ctx.builder.SetInsertPoint(bb);
       if (name.front() == '.') {
@@ -1321,6 +1355,8 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     }
   }
   else {
+    if (ltset) ctx.flags.onerror(loc, "@link annotation can only be used on global or static variables", ERROR);
+    if (!link_as.empty()) ctx.flags.onerror(loc, "@linkas annotation can only be used on global or static variables", ERROR);
     if (name.front() == '.') {
       old_path = ctx.path;
       ctx.path = {name.substr(1)};

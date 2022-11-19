@@ -33,8 +33,8 @@ add_executable(test tests/main.cpp tests/test.hpp
 target_link_libraries(test cobalt)
 
 # build standard library
-include(./cmake/StdLib.cmake)
-add_stdlib(co-std PREFIX __co_ TARGETS std/c/compat.h std/c/std.h std/c/alloc.cpp std/c/file.cpp LIBS c gcc)
+add_library(co-std SHARED std/c/compat.h std/c/std.h std/c/alloc.cpp std/c/file.cpp std/c/misc.cpp std/c/string.cpp)
+add_custom_command(TARGET co-std POST_BUILD COMMAND ${CMAKE_STRIP} -wK __co_* $<TARGET_FILE:co-std>)
 set_property(TARGET co-std PROPERTY OUTPUT_NAME co)
 
 # main group to ignore tests

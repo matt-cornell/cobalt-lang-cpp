@@ -299,7 +299,8 @@ co help [category]
     return cleanup<0>();
   }
   if (cmd == "aot") {
-    std::string_view input = "", output = "";
+    std::string_view input = "";
+    std::string output = "";
     std::uint8_t opt_lvl = -1;
     std::vector<std::string_view> linked;
     enum {UNSPEC, LLVM, ASM, BC, OBJ} output_type = UNSPEC;
@@ -390,6 +391,45 @@ co help [category]
         }
         input = cmd;
       }
+    }
+    if (input.empty()) {
+      llvm::errs() << "input file not specified\n";
+      return cleanup<1>();
+    }
+    if (output.empty()) switch (output_type) {
+      case UNSPEC: output = "a.out"; break;
+      case ASM:
+        if (input == "-") output = "cmdline.s";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "s";
+        }
+        break;
+      case LLVM:
+        if (input == "-") output = "cmdline.ll";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "ll";
+        }
+        break;
+      case BC:
+        if (input == "-") output = "cmdline.bc";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "bc";
+        }
+        break;
+      case OBJ:
+        if (input == "-") output = "cmdline.o";
+        else {
+          auto idx = input.rfind('.');
+          output = idx == std::string::npos ? input : input.substr(idx + 1);
+          output += "o";
+        }
+        break;
     }
     auto f = llvm::MemoryBuffer::getFileOrSTDIN(input, true, false);
     if (input == "-") input = "<stdin>";

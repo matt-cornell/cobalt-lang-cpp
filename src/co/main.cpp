@@ -6,12 +6,15 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/Host.h>
 #include <llvm/IR/LegacyPassManager.h>
+#include <filesystem>
 #include "cobalt/version.hpp"
 #include "cobalt/compile.hpp"
 #ifndef _WIN32
 #include <unistd.h>
 #include <wait.h>
 #endif
+namespace fs = std::filesystem;
+using rdi = fs::recursive_directory_iterator;
 constexpr char help[] = R"(co- Cobalt compiler and build tool
 subcommands:
 co aot: compile file
@@ -75,7 +78,28 @@ void pretty_print(llvm::raw_ostream& os, std::size_t sz, cobalt::token const& to
 template <int code> int cleanup() {llvm::errs().flush(); return code;}
 llvm::raw_ostream& warn() {return llvm::errs().changeColor(llvm::raw_ostream::YELLOW, true).write("warning: ", 9).resetColor();}
 llvm::raw_ostream& error() {return llvm::errs().changeColor(llvm::raw_ostream::RED, true).write("error: ", 7).resetColor();}
-int main(int argc, char** argv) {
+int add_jdl(std::vector<std::pair<std::string_view, bool>>& linked, std::string_view lib, std::unique_ptr<llvm::orc::LLJIT>& jit, fs::path const& path) {
+  for (auto& [l, p] : linked) if (!p && l == lib) {
+    p = true;
+    auto ex_jdl = jit->createJITDylib(std::string(lib));
+    if (ex_jdl) {
+      auto& jdl = ex_jdl.get();
+      std::unique_ptr<llvm::orc::DynamicLibrarySearchGenerator> dlsg;
+      if (auto err = llvm::orc::DynamicLibrarySearchGenerator::Load(path.c_str(), 0).moveInto(dlsg)) {
+        llvm::errs() << err;
+        return cleanup<6>();
+      }
+      jdl.addGenerator(std::move(dlsg));
+      jit->getMainJITDylib().addToLinkOrder(jdl);
+    }
+    else {
+      llvm::errs() << ex_jdl.takeError();
+      return cleanup<6>();
+    }
+  }
+  return 0;
+}
+int main(int argc, char** argv, char** env) {
   if (argc == 1) {
     llvm::outs() << help;
     return cleanup<0>();
@@ -202,7 +226,7 @@ co help [category]
             output = *it;
             break;
           default:
-            llvm::outs() << "unknown flag -" << c;
+            error() << "unknown flag -" << c;
             return cleanup<1>();
         }
       }
@@ -562,9 +586,239 @@ co help [category]
     return cleanup<0>();
   }
   if (cmd == "jit") {
-    // TODO: JIT compiler
-
-    return cleanup<0>();
+    std::string_view input = "";
+    std::uint8_t opt_lvl = -1;
+    std::vector<std::pair<std::string_view, bool>> linked;
+    enum {DEFAULT, QUIET, WERROR} error_type = DEFAULT;
+    std::vector<std::string_view> link_dirs = {"/usr/local/lib", "/usr/lib/", "/lib"};
+    std::size_t first_idx = 0;
+    for (char** it = argv + 2; !first_idx && it < argv + argc; ++it) {
+      std::string_view cmd = *it;
+      if (cmd.front() == '-') {
+        cmd.remove_prefix(1);
+        if (cmd.empty()) {
+          if (!input.empty()) {
+            error() << "redefinition of input file\n";
+            return cleanup<1>();
+          }
+          input = "-";
+        }
+        else switch (cmd.front()) {
+          case '-':
+            cmd.remove_prefix(1);
+            if (cmd.empty()) first_idx = it - argv;
+            else if (cmd == "quiet") {
+              if (error_type != DEFAULT) warn() << "redefinition or override of error mode\n";
+              error_type = QUIET;
+            }
+            else if (cmd == "werrror") {
+              if (error_type != DEFAULT) warn() << "redefinition or override of error mode\n";
+              error_type = WERROR;
+            }
+            else {
+              error() << "unkown flag --" << cmd << '\n';
+              return cleanup<1>();
+            }
+            break;
+          case 'O':
+            if (cmd.size() > 2) {
+              error() << "optimization level should be a single-digit number\n";
+              return cleanup<1>();
+            }
+            if (opt_lvl != 255) warn() << "redefinition of optimization level\n";
+            if (cmd[1] < '0' || cmd[1] > '9') {
+              error() << "invalid value for optimization level\n";
+              return cleanup<1>();
+            }
+            opt_lvl = cmd[1] - '0';
+            break;
+          default:
+            for (char c : cmd) switch (c) {
+              case 'O': error() << "-O flag must not be specified with any other flags\n"; return cleanup<1>();
+              case 'l':
+                ++it;
+                if (it == argv + argc) {
+                  error() << "unspecified linked library\n";
+                  return cleanup<1>();
+                }
+                linked.push_back({*it, false});
+                break;
+            }
+        }
+      }
+      else {
+        if (!input.empty()) {
+          error() << "redefinition of input file\n";
+          return cleanup<1>();
+        }
+        input = cmd;
+      }
+    }
+    if (input.empty()) {
+      error() << "input file not specified\n";
+      return cleanup<1>();
+    }
+    auto f = llvm::MemoryBuffer::getFileOrSTDIN(input, true, false);
+    if (input == "-") input = "<stdin>";
+    if (!f) {
+      error() << "error opening " << input << ": " << f.getError().message() << '\n';
+      return cleanup<1>();
+    }
+    std::string_view code{f.get()->getBuffer().data(), f.get()->getBufferSize()};
+    cobalt::flags_t flags = cobalt::default_flags;
+    bool* critical = &cobalt::default_handler.critical;
+    switch (error_type) {
+      case DEFAULT: break;
+      case QUIET:
+        flags.onerror = cobalt::quiet_handler;
+        critical = &cobalt::quiet_handler.critical;
+        break;
+      case WERROR:
+        flags.onerror = cobalt::werror_handler;
+        critical = &cobalt::werror_handler.critical;
+        break;
+    }
+    auto toks = cobalt::tokenize(code, cobalt::sstring::get(input), flags);
+    if (*critical) return cleanup<2>();
+    cobalt::AST ast = cobalt::parse({toks.begin(), toks.end()}, flags);
+    cobalt::compile_context ctx{std::string(input)};
+    ast(ctx);
+    std::error_code ec;
+    llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();
+    std::string err;
+    auto target = llvm::TargetRegistry::lookupTarget(llvm::sys::getDefaultTargetTriple(), err);
+    if (!target) {
+      error() << "error initializing target: " << err << '\n';
+      return cleanup<1>();
+    }
+    std::unique_ptr<llvm::orc::LLJIT> jit;
+    if (auto err = llvm::orc::LLJITBuilder{}.create().moveInto(jit)) {
+      error() << err << '\n';
+      return cleanup<6>();
+    }
+    for (auto& [p, l] : linked) if (p.front() == ':') {
+      fs::path path = p.substr(1);
+      if (!fs::exists(path)) {
+        error() << path.c_str() << " does not exist\n";
+        return cleanup<4>();
+      }
+      auto ex_jdl = jit->createJITDylib(path.stem().string());
+      if (ex_jdl) {
+        auto& jdl = ex_jdl.get();
+        std::unique_ptr<llvm::orc::DynamicLibrarySearchGenerator> dlsg;
+        if (auto err = llvm::orc::DynamicLibrarySearchGenerator::Load(path.c_str(), 0).moveInto(dlsg)) {
+          llvm::errs() << err << '\n';
+          return cleanup<6>();
+        }
+        jdl.addGenerator(std::move(dlsg));
+      }
+      else {
+        llvm::errs() << ex_jdl.takeError() << '\n';
+        return cleanup<6>();
+      }
+      l = true;
+    }
+    if (auto home = std::getenv("HOME")) {
+      fs::path local_lib = home;
+      local_lib /= ".local/lib";
+      if (fs::exists(local_lib)) for (auto const& entry : rdi(local_lib)) {
+        auto const& path = entry.path();
+        auto ln = path.filename().string();
+        #if defined(_WIN32) // xxx.dll
+        if (ln.ends_with(".dll")) if (int c = add_jdl(linked, std::string_view{ln.data(), 0, idx}, jit, path)) return c;
+        #elif defined(__OSX__) || defined(__APPLE__) // xxx.dylib
+        if (ln.ends_with(".dylib")) if (int c = add_jdl(linked, std::string_view{ln.data(), 0, idx}, jit, path)) return c;
+        #else // libxxx[.n]
+        if (ln.starts_with("lib")) {
+          std::string_view libname = std::string_view{ln.data() + 3, ln.size() - 3};
+          std::size_t idx = libname.rfind('.');
+          if (idx == std::string::npos) continue;
+          if (libname.substr(idx + 1) == "so") {
+            auto eo = llvm::MemoryBuffer::getFile(path.string());
+            constexpr char data[] = "\x7f\x65LF";
+            if (eo && !std::memcmp(eo.get()->getBufferStart(), data, 4)) if (int c = add_jdl(linked, libname.substr(0, idx), jit, path)) return c;
+          }
+          if (libname.substr(idx).find_first_not_of("0123456789", idx) != std::string::npos) continue;
+          std::size_t old = idx;
+          do {
+            old = idx;
+            idx = libname.rfind('.', idx - 1);
+            auto lns = libname.substr(idx + 1, old - idx - 1);
+            if (lns == "so") {
+              auto eo = llvm::MemoryBuffer::getFile(path.string());
+              constexpr char data[] = "\x7f\x65LF";
+              if (eo && !std::memcmp(eo.get()->getBufferStart(), data, 4)) if (int c = add_jdl(linked, libname.substr(0, idx), jit, path)) return c;
+            }
+            else if (lns.find_first_not_of("0123456789", idx + 1) != std::string::npos) goto LOOP_EXIT_1;
+          } while (idx != std::string::npos);
+          LOOP_EXIT_1:;
+        }
+        #endif
+      }
+    }
+    for (auto dir : link_dirs) for (auto const& entry : rdi(dir)) {
+      auto const& path = entry.path();
+      auto ln = path.filename().string();
+      #if defined(_WIN32) // xxx.dll
+      if (ln.ends_with(".dll")) if (int c = add_jdl(linked, std::string_view{ln.data(), 0, idx}, jit, path)) return c;
+      #elif defined(__OSX__) || defined(__APPLE__) // xxx.dylib
+      if (ln.ends_with(".dylib")) if (int c = add_jdl(linked, std::string_view{ln.data(), 0, idx}, jit, path)) return c;
+      #else // libxxx[.n]
+      if (ln.starts_with("lib")) {
+        std::string_view libname = std::string_view{ln.data() + 3, ln.size() - 3};
+        std::size_t idx = libname.rfind('.');
+        if (idx == std::string::npos) continue;
+        if (libname.substr(idx + 1) == "so") {
+          auto eo = llvm::MemoryBuffer::getFile(path.string());
+          constexpr char data[] = "\x7f\x45LF";
+          if (eo && !std::memcmp(eo.get()->getBufferStart(), data, 4)) if (int c = add_jdl(linked, libname.substr(0, idx), jit, path)) return c;
+        }
+        else if (libname.substr(idx).find_first_not_of("0123456789", idx) != std::string::npos) continue;
+        std::size_t old = idx;
+        do {
+          old = idx;
+          idx = libname.rfind('.', idx - 1);
+          auto lns = libname.substr(idx + 1, old - idx - 1);
+          if (lns == "so") {
+            auto eo = llvm::MemoryBuffer::getFile(path.string());
+            constexpr char data[] = "\x7f\x45LF";
+            if (eo && !std::memcmp(eo.get()->getBufferStart(), data, 4)) if (int c = add_jdl(linked, libname.substr(0, idx), jit, path)) return c;
+          }
+          else if (lns.find_first_not_of("0123456789", idx + 1) != std::string::npos) goto LOOP_EXIT_2;
+        } while (idx != std::string::npos);
+        LOOP_EXIT_2:;
+      }
+      #endif
+    }
+    bool bad = false;
+    for (auto [l, p] : linked) if (!p) {
+      error() << "couldn't find library '" << l << "'\n";
+      bad = true;
+    }
+    if (bad) return cleanup<8>();
+    if (auto err = jit->addIRModule({std::move(ctx.module), std::move(ctx.context)})) {
+      llvm::errs() << err << '\n';
+      return cleanup<6>();
+    }
+    llvm::orc::ExecutorAddr addr;
+    if (auto err = jit->lookup("main").moveInto(addr)) {
+      llvm::errs() << err << '\n';
+      return cleanup<7>();
+    }
+    llvm::errs().flush();
+    auto main_fn = addr.toPtr<int(int, char**, char**)>();
+    if (first_idx) {
+      argv[first_idx] = const_cast<char*>(input.data());
+      return main_fn(argc - first_idx, argv + first_idx, env);
+    }
+    else {
+      char* args[] = {const_cast<char*>(input.data()), nullptr};
+      return main_fn(1, args, env);
+    }
   }
   error() << "unknown command '" << cmd << "'\n";
   return cleanup<1>();

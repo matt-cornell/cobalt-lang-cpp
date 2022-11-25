@@ -855,12 +855,16 @@ typed_value cobalt::ast::block_ast::codegen(compile_context& ctx) const {
 typed_value cobalt::ast::if_ast::codegen(compile_context& ctx) const {
   auto c = cond(ctx);
   if (!c.type) return nullval;
+  auto v = expl_convert(c.value, c.type, types::integer::get(1), loc, ctx);
+  if (!v) {
+    ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + c.type->name() + "' to 'i1'").str(), ERROR);
+    return nullval;
+  }
   auto f = ctx.builder.GetInsertBlock()->getParent();
   auto 
     itb = llvm::BasicBlock::Create(*ctx.context, "if_true", f), 
     ifb = llvm::BasicBlock::Create(*ctx.context, "if_false"), 
     merge = llvm::BasicBlock::Create(*ctx.context, "merge");
-  auto v = expl_convert(c.value, c.type, types::integer::get(1), loc, ctx);
   ctx.builder.CreateCondBr(v, itb, ifb);
   ctx.builder.SetInsertPoint(itb);
   auto itv = if_true(ctx);
@@ -922,12 +926,16 @@ typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
   if (std::string_view(op) == "&&") {
     auto l = lhs(ctx);
     if (!l.type) return nullval;
+    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
+    if (!v) {
+      ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + c.type->name() + "' to 'i1'").str(), ERROR);
+      return nullval;
+    }
     auto f = ctx.builder.GetInsertBlock()->getParent();
     auto 
       if_true = llvm::BasicBlock::Create(*ctx.context, "if_true", f), 
       if_false = llvm::BasicBlock::Create(*ctx.context, "if_false"), 
       merge = llvm::BasicBlock::Create(*ctx.context, "merge");
-    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
     ctx.builder.CreateCondBr(v, if_true, if_false);
     ctx.builder.SetInsertPoint(if_true);
     auto itv = rhs(ctx);
@@ -960,12 +968,16 @@ typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
   if (std::string_view(op) == "||") {
     auto l = lhs(ctx);
     if (!l.type) return nullval;
+    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
+    if (!v) {
+      ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + c.type->name() + "' to 'i1'").str(), ERROR);
+      return nullval;
+    }
     auto f = ctx.builder.GetInsertBlock()->getParent();
     auto 
       if_true = llvm::BasicBlock::Create(*ctx.context, "if_true"), 
       if_false = llvm::BasicBlock::Create(*ctx.context, "if_false", f), 
       merge = llvm::BasicBlock::Create(*ctx.context, "merge");
-    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
     ctx.builder.CreateCondBr(v, if_true, if_false);
     ctx.builder.SetInsertPoint(if_false);
     auto ifv = rhs(ctx);

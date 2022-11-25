@@ -852,7 +852,55 @@ typed_value cobalt::ast::block_ast::codegen(compile_context& ctx) const {
   delete vars;
   return last;
 }
-typed_value cobalt::ast::if_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::if_ast::codegen(compile_context& ctx) const {
+  auto c = cond(ctx);
+  if (!c.type) return nullval;
+  auto f = ctx.builder.GetInsertBlock()->getParent();
+  auto 
+    itb = llvm::BasicBlock::Create(*ctx.context, "if_true", f), 
+    ifb = llvm::BasicBlock::Create(*ctx.context, "if_false"), 
+    merge = llvm::BasicBlock::Create(*ctx.context, "merge");
+  auto v = expl_convert(c.value, c.type, types::integer::get(1), loc, ctx);
+  ctx.builder.CreateCondBr(v, itb, ifb);
+  ctx.builder.SetInsertPoint(itb);
+  auto itv = if_true(ctx);
+  if (!itv.type) {
+    itb->eraseFromParent();
+    delete ifb;
+    delete merge;
+    return nullval;
+  }
+  ctx.builder.CreateBr(merge);
+  itb = ctx.builder.GetInsertBlock();
+  f->getBasicBlockList().push_back(ifb);
+  ctx.builder.SetInsertPoint(ifb);
+  typed_value ifv;
+  auto llt = itv.type->llvm_type(loc, ctx);
+  if (if_false) {
+    ifv = if_false(ctx);
+    if (!ifv.type) {
+      itb->eraseFromParent();
+      ifb->eraseFromParent();
+      delete merge;
+      return nullval;
+    }
+    ifv.value = impl_convert(ifv.value, ifv.type, itv.type, loc, ctx);
+    if (!ifv.value) {
+      ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + itv.type->name() + "' to '" + ifv.type->name() + "'").str(), ERROR);
+      ifv.value = llvm::Constant::getNullValue(llt);
+    }
+  }
+  else ifv.value = llvm::Constant::getNullValue(llt);
+  ctx.builder.CreateBr(merge);
+  ifb = ctx.builder.GetInsertBlock();
+  f->getBasicBlockList().push_back(merge);
+  ctx.builder.SetInsertPoint(merge);
+  if (itv.type->kind == NULLTYPE) return {nullptr, itv.type};
+  auto pn = ctx.builder.CreatePHI(llt, 2);
+  pn->addIncoming(itv.value, itb);
+  pn->addIncoming(ifv.value, ifb);
+  return {pn, itv.type};
+}
 typed_value cobalt::ast::while_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 typed_value cobalt::ast::for_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 // funcs.hpp
@@ -883,6 +931,12 @@ typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
     ctx.builder.CreateCondBr(v, if_true, if_false);
     ctx.builder.SetInsertPoint(if_true);
     auto itv = rhs(ctx);
+    if (!itv.type) {
+      if_true->eraseFromParent();
+      delete if_false;
+      delete merge;
+      return nullval;
+    }
     while (itv.type->kind == REFERENCE) {
       auto t = static_cast<types::reference const*>(itv.type)->base;
       itv.value = ctx.builder.CreateLoad(t->llvm_type(loc, ctx), itv.value);
@@ -915,6 +969,12 @@ typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
     ctx.builder.CreateCondBr(v, if_true, if_false);
     ctx.builder.SetInsertPoint(if_false);
     auto ifv = rhs(ctx);
+    if (!ifv.type) {
+      if_false->eraseFromParent();
+      delete if_true;
+      delete merge;
+      return nullval;
+    }
     while (ifv.type->kind == REFERENCE) {
       auto t = static_cast<types::reference const*>(ifv.type)->base;
       ifv.value = ctx.builder.CreateLoad(t->llvm_type(loc, ctx), ifv.value);

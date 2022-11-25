@@ -26,7 +26,7 @@ std::array<binary_operator, 42> bin_ops = {
 std::array<std::string_view, 8> pre_ops = {"+", "-", "&", "*", "!", "~", "++", "--"};
 std::array<std::string_view, 2> post_ops = {"?", "!"};
 std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t flags);
-std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, std::string_view exit_chars = ";");
+std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, std::string_view exit_chars = ";", bool stop_at_else = false);
 AST parse_rtl_infix(span<token> code, flags_t flags, binary_operator const* start);
 std::vector<std::string> parse_paths(span<token>::iterator& it, span<token>::iterator end, flags_t flags) {
   std::vector<std::string> paths = {""};
@@ -312,9 +312,55 @@ AST parse_postfix(span<token> code, flags_t flags) {
   for (auto op : post_ops) if (code.back().data == op) return AST::create<ast::unop_ast>(code.back().loc, sstring::get((llvm::Twine("p") + op).str()), parse_postfix(code.subspan(0, code.size() - 1), flags));
   return parse_calls(code, flags);
 }
+AST parse_flow(span<token> code, flags_t flags) {
+  if (code.front().data == "if") {
+    if (code.size() == 1) {
+      flags.onerror(code.front().loc, "expected if condition", ERROR);
+      return AST::create<ast::null_ast>(code.front().loc);
+    }
+    AST cond{nullptr};
+    span<token>::iterator it;
+    switch (code[1].data.front()) {
+      case '(':  {
+        std::size_t depth = 1;
+        for (it = code.begin() + 2; depth && it != code.end(); ++it) switch (it->data.front()) {
+          case '(': ++depth; break;
+          case ')': --depth; break;
+        }
+        cond = parse_groups({code.begin() + 1, it}, flags);
+      } break;
+      case '{': {
+        std::size_t depth = 1;
+        for (it = code.begin() + 2; depth && it != code.end(); ++it) switch (it->data.front()) {
+          case '{': ++depth; break;
+          case '}': --depth; break;
+        }
+        cond = parse_groups({code.begin() + 1, it}, flags);
+      } break;
+      default:
+        flags.onerror(code.front().loc, "if condition must be enclosed in parentheses or braces", ERROR);
+        return AST::create<ast::null_ast>(code.front().loc);
+    }
+    auto [if_true, i] = parse_expr({it, code.end()}, flags, flags.exit_chars, true);
+    if (i != code.end() && i->data == "else") {
+      it = i + 1;
+      auto [if_false, i] = parse_expr({it, code.end()}, flags, flags.exit_chars);
+      if (i != code.end()) flags.onerror(i->loc, "unexpected identifier", ERROR);
+      return AST::create<ast::if_ast>(code.front().loc, std::move(cond), std::move(if_true), std::move(if_false));
+    }
+    else return AST::create<ast::if_ast>(code.front().loc, std::move(cond), std::move(if_true));
+  }
+  //else if (code.front().data == "while");
+  //else if (code.front().data == "for");
+  else if (code.front().data == "else") {
+    flags.onerror(code.front().loc, "unexpected 'else'", ERROR);
+    return AST::create<ast::null_ast>(code.front().loc);
+  }
+  else return parse_postfix(code, flags);
+}
 AST parse_prefix(span<token> code, flags_t flags) {
   for (auto op : pre_ops) if (code.front().data == op) return AST::create<ast::unop_ast>(code.front().loc, sstring::get(op), parse_prefix(code.subspan(1), flags));
-  return parse_postfix(code, flags);
+  return parse_flow(code, flags);
 }
 AST parse_cast(span<token> code, flags_t flags) {
   auto it = code.end() - 1, end = code.begin() - 1;
@@ -587,7 +633,7 @@ AST parse_infix(span<token> code, flags_t flags, binary_operator const* ptr = &b
   if (ptr->rtl) return parse_rtl_infix(code, flags, ptr);
   else return parse_ltr_infix(code, flags, ptr);
 }
-std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, std::string_view exit_chars) {
+std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags, std::string_view exit_chars, bool stop_at_else) {
   if (code.empty()) return {AST::create<ast::null_ast>(nullloc), code.end()};
   auto it = code.begin(), end = code.end();
   std::size_t paren = 0, brack = 0, brace = 0;
@@ -600,10 +646,13 @@ std::pair<AST, span<token>::iterator> parse_expr(span<token> code, flags_t flags
       case ']': --brack; break;
       case '{': ++brace; break;
       case '}': --brace; break;
+      case 'e': if (stop_at_else && it->data == "else") goto END;
     }
   }
+  END:
   if (code.begin() == it) return {AST::create<ast::null_ast>(code.front().loc), it + 1};
-  return {parse_infix({code.begin(), it}, flags, &bin_ops[2]), it};
+  flags.exit_chars = exit_chars;
+  return {parse_infix({code.begin(), it}, flags), it};
 }
 std::pair<AST, span<token>::iterator> parse_statement(span<token> code, flags_t flags) {
 #define UNSUPPORTED(TYPE) {flags.onerror(it->loc, TYPE " definitions are not currently supported", CRITICAL); return {AST(nullptr), code.begin() + 1};}
@@ -1410,3 +1459,4 @@ AST cobalt::parse(span<token> code, flags_t flags) {
   }
   return AST::create<ast::top_level_ast>(code.front().loc, std::move(asts));
 }
+

@@ -1,0 +1,12 @@
+#=#
+variables.co- demonstrate use of local and global variables
+#=#
+module test {
+  let x = 0; # test.x is an i64
+}
+mut y = 10.5; # y is a f64
+fn main(): i32 = {
+  let z = test.x + y; # z is 10.5 as an f64
+  ++y; # only for mutable variables
+  test.x : i32 # explicitly cast to i32 to silence any errors
+};

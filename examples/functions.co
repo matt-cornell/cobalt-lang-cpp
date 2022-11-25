@@ -1,0 +1,21 @@
+#=#
+functions.co- demonstrate use of functions
+requires libc
+#=#
+@extern(C) fn printf_i64(str: i8*, val: i64): null = null; # variadic functions aren't supported
+fn print_num(val: i64): null = printf_i64("%lli", val);
+fn println_num(val: i64): null = printf_i64("%lli\n", val);
+mut globalvar = 0;
+# These functions use LLVM's fastcc instead of cconv
+fn test(): i64 = 0;
+fn sideeffect(): null = {
+  ++globalval;
+  null # explicitly returning null is optional
+};
+@cconv(tailcc) fn factorial(x: u64): u64 = x * factorial(x - 1); # can optimize with tail calls
+fn main(): i32 = {
+  sideeffect();
+  println_num(globalvar);
+  println_num(factorial(6)); # Let's use a small number
+  test() : i32
+};

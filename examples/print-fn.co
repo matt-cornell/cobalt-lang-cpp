@@ -1,0 +1,63 @@
+#=#
+print-fn.co- example implementation of a print function
+requires libc
+This example would not be used in a real program, you should use fputs
+#=#
+@extern(C) @linkas(printf) fn __libc_printf(str: i8*): null = 0;
+@extern(C) fn malloc(size: i64): null* = null;
+@extern(C) fn free(ptr: null*): null = null;
+fn print(str: i8*): null = {
+  mut size = 1;
+  mut ptr = str;
+  while (*ptr) {
+    ++size;
+    if (*ptr == '%') ++size;
+    ++ptr;
+  }
+  mut p2: i8* = malloc(size);
+  ptr = str;
+  while (*ptr) {
+    *p2 = *ptr;
+    ++p2;
+    if (*ptr == '%') {
+      *p2 = '%': i8;
+      ++p2;
+    }
+    ++ptr;
+  }
+  *ptr = 0;
+  p2 -= size - 1;
+  __libc_printf(p2);
+  free(p2);
+};
+fn println(str: i8*): null = { # basically just puts
+  mut size = 2;
+  mut ptr = str;
+  while (*ptr) {
+    ++size;
+    if (*ptr == '%') ++size;
+    ++ptr;
+  }
+  mut p2: i8* = malloc(size);
+  ptr = str;
+  while (*ptr) {
+    *p2 = *ptr;
+    ++p2;
+    if (*ptr == '%') {
+      *p2 = '%': i8;
+      ++p2;
+    }
+    ++ptr;
+  }
+  *ptr = '\n': i8;
+  *(ptr + 1) = 0;
+  p2 -= size - 1;
+  __libc_printf(p2);
+  free(p2);
+};
+fn main(): i32 = {
+  println("test");
+  println("This works: %");
+  println("And this: %%%%%");
+  0
+};

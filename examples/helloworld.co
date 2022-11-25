@@ -1,0 +1,7 @@
+#=#
+helloworld.co- print "Hello, World!" to console
+requires libc
+#=#
+@extern(C) fn puts(str: i8*): null = null;
+fn main(): i32 = {puts("Hello, World!"); 0};
+# fn main(): i32 = puts("Hello, World!"); # implicitly converts null to 0

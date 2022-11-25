@@ -1,7 +1,3 @@
 build/*
 .vscode/*
 stacktrace.cpp
-
-# These will be added later
-std/co/*
-examples/*

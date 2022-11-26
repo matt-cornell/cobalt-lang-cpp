@@ -5,6 +5,12 @@
 using namespace cobalt;
 using enum types::type_base::kind_t;
 const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool"), null = sstring::get("null");
+static bool is_reserved(std::string_view sv) {
+  constexpr std::string_view[] kws = {"let", "mut", "fn", "cr", "module", "import", "if", "else", "while", "for", "struct", "mixin", "spec", "typeof", "bool", "null", "isize", "usize"};
+  if ((sv[0] == 'i' || sv[0] == 'u' || sv[0] == 'f') && sv.find_first_not_of("0123456789")) return true;
+  for (auto kw : kws) if (sv == kw) return true;
+  return false;
+}
 static type_ptr parse_type(sstring str) {
   if (str.empty()) return nullptr;
   switch (str.back()) {
@@ -852,8 +858,93 @@ typed_value cobalt::ast::block_ast::codegen(compile_context& ctx) const {
   delete vars;
   return last;
 }
-typed_value cobalt::ast::if_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
-typed_value cobalt::ast::while_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::if_ast::codegen(compile_context& ctx) const {
+  auto c = cond(ctx);
+  if (!c.type) return nullval;
+  auto v = expl_convert(c.value, c.type, types::integer::get(1), loc, ctx);
+  if (!v) {
+    ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + c.type->name() + "' to 'i1'").str(), ERROR);
+    return nullval;
+  }
+  auto old_ip = ctx.builder.GetInsertBlock();
+  auto f = old_ip->getParent();
+  auto 
+    itb = llvm::BasicBlock::Create(*ctx.context, "if_true", f), 
+    ifb = llvm::BasicBlock::Create(*ctx.context, "if_false"), 
+    merge = llvm::BasicBlock::Create(*ctx.context, "merge");
+  ctx.builder.CreateCondBr(v, itb, ifb);
+  ctx.builder.SetInsertPoint(itb);
+  auto itv = if_true(ctx);
+  if (!itv.type) {
+    itb->eraseFromParent();
+    ctx.builder.SetInsertPoint(old_ip);
+    delete ifb;
+    delete merge;
+    return nullval;
+  }
+  ctx.builder.CreateBr(merge);
+  itb = ctx.builder.GetInsertBlock();
+  f->getBasicBlockList().push_back(ifb);
+  ctx.builder.SetInsertPoint(ifb);
+  typed_value ifv;
+  auto llt = itv.type->llvm_type(loc, ctx);
+  if (if_false) {
+    ifv = if_false(ctx);
+    if (!ifv.type) {
+      itb->eraseFromParent();
+      ifb->eraseFromParent();
+      ctx.builder.SetInsertPoint(old_ip);
+      delete merge;
+      return nullval;
+    }
+    ifv.value = impl_convert(ifv.value, ifv.type, itv.type, loc, ctx);
+    if (!ifv.value) {
+      ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + itv.type->name() + "' to '" + ifv.type->name() + "'").str(), ERROR);
+      ifv.value = llvm::Constant::getNullValue(llt);
+    }
+  }
+  else ifv.value = llvm::Constant::getNullValue(llt);
+  ctx.builder.CreateBr(merge);
+  ifb = ctx.builder.GetInsertBlock();
+  f->getBasicBlockList().push_back(merge);
+  ctx.builder.SetInsertPoint(merge);
+  if (itv.type->kind == NULLTYPE) return {nullptr, itv.type};
+  auto pn = ctx.builder.CreatePHI(llt, 2);
+  pn->addIncoming(itv.value, itb);
+  pn->addIncoming(ifv.value, ifb);
+  return {pn, itv.type};
+}
+typed_value cobalt::ast::while_ast::codegen(compile_context& ctx) const {
+  auto f = ctx.builder.GetInsertBlock()->getParent();
+  auto old_ip = ctx.builder.GetInsertBlock();
+  auto cb = llvm::BasicBlock::Create(*ctx.context, "cond", f);
+  ctx.builder.CreateBr(cb);
+  ctx.builder.SetInsertPoint(cb);
+  auto c = cond(ctx);
+  auto v = expl_convert(c.value, c.type, types::integer::get(1), loc, ctx);
+  if (!v) {
+    ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + c.type->name() + "' to 'i1'").str(), ERROR);
+    cb->eraseFromParent();
+    ctx.builder.SetInsertPoint(old_ip);
+    return nullval;
+  }
+  auto bb = llvm::BasicBlock::Create(*ctx.context, "body", f), exit = llvm::BasicBlock::Create(*ctx.context, "exit");
+  ctx.builder.CreateCondBr(v, bb, exit); 
+  cb = ctx.builder.GetInsertBlock();
+  ctx.builder.SetInsertPoint(bb);
+  auto bv = body(ctx);
+  if (!bv.type) {
+    cb->eraseFromParent();
+    bb->eraseFromParent();
+    delete exit;
+    return nullval;
+  }
+  ctx.builder.CreateBr(cb);
+  bb = ctx.builder.GetInsertBlock();
+  f->getBasicBlockList().push_back(exit);
+  ctx.builder.SetInsertPoint(exit);
+  return bv;
+}
 typed_value cobalt::ast::for_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
 // funcs.hpp
 typed_value cobalt::ast::cast_ast::codegen(compile_context& ctx) const {
@@ -874,15 +965,27 @@ typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
   if (std::string_view(op) == "&&") {
     auto l = lhs(ctx);
     if (!l.type) return nullval;
-    auto f = ctx.builder.GetInsertBlock()->getParent();
+    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
+    if (!v) {
+      ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + l.type->name() + "' to 'i1'").str(), ERROR);
+      return nullval;
+    }
+    auto old_ip = ctx.builder.GetInsertBlock();
+    auto f = old_ip->getParent();
     auto 
       if_true = llvm::BasicBlock::Create(*ctx.context, "if_true", f), 
       if_false = llvm::BasicBlock::Create(*ctx.context, "if_false"), 
       merge = llvm::BasicBlock::Create(*ctx.context, "merge");
-    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
     ctx.builder.CreateCondBr(v, if_true, if_false);
     ctx.builder.SetInsertPoint(if_true);
     auto itv = rhs(ctx);
+    if (!itv.type) {
+      if_true->eraseFromParent();
+      ctx.builder.SetInsertPoint(old_ip);
+      delete if_false;
+      delete merge;
+      return nullval;
+    }
     while (itv.type->kind == REFERENCE) {
       auto t = static_cast<types::reference const*>(itv.type)->base;
       itv.value = ctx.builder.CreateLoad(t->llvm_type(loc, ctx), itv.value);
@@ -906,15 +1009,27 @@ typed_value cobalt::ast::binop_ast::codegen(compile_context& ctx) const {
   if (std::string_view(op) == "||") {
     auto l = lhs(ctx);
     if (!l.type) return nullval;
-    auto f = ctx.builder.GetInsertBlock()->getParent();
+    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
+    if (!v) {
+      ctx.flags.onerror(loc, (llvm::Twine("cannot convert value of type '") + l.type->name() + "' to 'i1'").str(), ERROR);
+      return nullval;
+    }
+    auto old_ip = ctx.builder.GetInsertBlock();
+    auto f = old_ip->getParent();
     auto 
       if_true = llvm::BasicBlock::Create(*ctx.context, "if_true"), 
       if_false = llvm::BasicBlock::Create(*ctx.context, "if_false", f), 
       merge = llvm::BasicBlock::Create(*ctx.context, "merge");
-    auto v = expl_convert(l.value, l.type, types::integer::get(1), loc, ctx);
     ctx.builder.CreateCondBr(v, if_true, if_false);
     ctx.builder.SetInsertPoint(if_false);
     auto ifv = rhs(ctx);
+    if (!ifv.type) {
+      if_false->eraseFromParent();
+      ctx.builder.SetInsertPoint(old_ip);
+      delete if_true;
+      delete merge;
+      return nullval;
+    }
     while (ifv.type->kind == REFERENCE) {
       auto t = static_cast<types::reference const*>(ifv.type)->base;
       ifv.value = ctx.builder.CreateLoad(t->llvm_type(loc, ctx), ifv.value);
@@ -1054,14 +1169,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     else ctx.flags.onerror(loc, "unknown annotation @" + ann, ERROR);
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  alignas(sstring) char local_mem[sizeof(sstring)];
-  sstring& local = reinterpret_cast<sstring&>(local_mem[0]);
-  {
-    auto idx = name.rfind('.') + 1;
-    if (idx) local = sstring::get(name.substr(idx));
-    else local = sstring::get(name);
-  }
-  if (is_extern && !link_as.empty()) ctx.vars->insert(local, typed_value{llvm::GlobalAlias::create(ft, 0, link_type, concat(ctx.path, name), llvm::cast<llvm::Function>(ctx.module->getOrInsertFunction(link_as, ft).getCallee()), ctx.module.get()), types::function::get(t, std::vector<type_ptr>(args_t))});
+  if (is_extern && !link_as.empty()) llvm::GlobalAlias::create(ft, 0, link_type, concat(ctx.path, name), llvm::cast<llvm::Function>(ctx.module->getOrInsertFunction(link_as, ft).getCallee()), ctx.module.get());
   else {
     auto f = llvm::Function::Create(ft, link_type, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);;
     if (!f) return nullval;
@@ -1070,7 +1178,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
       std::size_t i = 0;
       for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
     }
-    ctx.vars->insert(local, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
+    ctx.vars->insert(name, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
     if (!is_extern) {
       if (name.front() == '.') {
         old_path = ctx.path;
@@ -1094,11 +1202,10 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
         ctx.vars = ctx.vars->parent;
         delete vars;
         ctx.builder.SetInsertPoint(ip);
+        if (name.front() == '.') std::swap(ctx.path, old_path);
+        else ctx.path.pop_back();
         if (!link_as.empty()) llvm::GlobalAlias::create(ft, 0, llvm::GlobalValue::ExternalLinkage, link_as, f, ctx.module.get());
       }
-      else ctx.builder.CreateRetVoid();
-      if (name.front() == '.') std::swap(ctx.path, old_path);
-      else ctx.path.pop_back();
     }
   }
   return nullval;
@@ -1182,6 +1289,10 @@ typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {
   std::size_t old = name.front() == '.', idx = name.find('.', 1);
   while (idx != std::string::npos) {
     auto local = name.substr(old + 1, idx - old - 1);
+    if (is_reserved(local)) {
+      ctx.flags.onerror(loc, (llvm::Twine("cannot create module with reserved name '") + local + "'").str(), ERROR);
+      return nullval;
+    }
     auto ss = sstring::get(local);
     auto it = vm->symbols.find(ss);
     old = idx;
@@ -1270,6 +1381,10 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     }
     else {
       if (it == vm->symbols.end()) {
+        if (is_reserved(local)) {
+          ctx.flags.onerror(loc, (llvm::Twine("cannot create module with reserved name '") + local + "'").str(), ERROR);
+          return nullval;
+        }
         auto nvm = std::make_shared<varmap>(vm);
         vm->symbols.insert({ss, symbol_type(nvm)});
         vm = nvm.get();
@@ -1284,6 +1399,10 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     idx = name.find('.', old);
   }
   auto local = name.substr(old);
+  if (is_reserved(local)) {
+    ctx.flags.onerror(loc, (llvm::Twine("cannot create variable with reserved name '") + local + "'").str(), ERROR);
+    return nullval;
+  }
   std::vector<std::string_view> old_path;
   std::string_view link_as = "";
   llvm::GlobalValue::LinkageTypes link_type = global ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::PrivateLinkage;
@@ -1356,7 +1475,6 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
         return nullval;
       }
       ctx.builder.CreateStore(tv.value, gv);
-      ctx.builder.CreateRetVoid();
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});
@@ -1394,6 +1512,10 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
     }
     else {
       if (it == vm->symbols.end()) {
+        if (is_reserved(local)) {
+          ctx.flags.onerror(loc, (llvm::Twine("cannot create module with reserved name '") + local + "'").str(), ERROR);
+          return nullval;
+        }
         auto nvm = std::make_shared<varmap>(vm);
         vm->symbols.insert({ss, symbol_type(nvm)});
         vm = nvm.get();
@@ -1408,6 +1530,10 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
     idx = name.find('.', old);
   }
   auto local = name.substr(old);
+  if (is_reserved(local)) {
+    ctx.flags.onerror(loc, (llvm::Twine("cannot create variable with reserved name '") + local + "'").str(), ERROR);
+    return nullval;
+  }
   std::vector<std::string_view> old_path;
   if (global) {
     if (val.is_const()) {
@@ -1450,7 +1576,6 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
         return nullval;
       }
       ctx.builder.CreateStore(tv.value, gv);
-      ctx.builder.CreateRetVoid();
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});

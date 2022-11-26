@@ -112,6 +112,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       }
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
+      case ARRAY: return nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -126,6 +127,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
         }
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
+      case ARRAY: return nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -135,6 +137,7 @@ static llvm::Value* impl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       auto t = static_cast<types::reference const*>(t1)->base;
       return impl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
     }
+    case ARRAY: return nullptr;
     case NULLTYPE: return nullptr;
     case FUNCTION: return nullptr;
     case CUSTOM: return nullptr;
@@ -176,6 +179,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
         else return ctx.builder.CreateSIToFP(v, t2->llvm_type(loc, ctx));
       case POINTER: return ctx.builder.CreateIntToPtr(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
+      case ARRAY: return nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -192,6 +196,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
         else return ctx.builder.CreateFPTrunc(v, t2->llvm_type(loc, ctx));
       case POINTER: return nullptr;
       case REFERENCE: return nullptr;
+      case ARRAY: return nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -203,6 +208,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case FLOAT: return nullptr;
       case POINTER: return ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
+      case ARRAY: return static_cast<types::pointer const*>(t1)->base == static_cast<types::array const*>(t2)->base ? v : nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -212,6 +218,16 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       return expl_convert(ctx.builder.CreateLoad(t->llvm_type(loc, ctx), v), t, t2, loc, ctx);
     }
     case NULLTYPE: return nullptr;
+    case ARRAY: switch (t2->kind) {
+      case INTEGER: return nullptr;
+      case FLOAT: return nullptr;
+      case POINTER: return static_cast<types::array const*>(t1)->base == static_cast<types::pointer const*>(t2)->base ? v : nullptr;
+      case REFERENCE: return nullptr;
+      case ARRAY: return nullptr;
+      case FUNCTION: return nullptr;
+      case NULLTYPE: return nullptr;
+      case CUSTOM: return nullptr;
+    }
     case FUNCTION: return nullptr;
     case CUSTOM: return nullptr;
   }
@@ -297,12 +313,14 @@ static typed_value unary_op(typed_value tv, std::string_view op, location loc, c
           }
           break;
         case REFERENCE: break;
+        case ARRAY: break;
         case FUNCTION: break;
         case NULLTYPE: break;
         case CUSTOM: break;
       }
       return unary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), tv.value), t}, op, loc, ctx);
     }
+    case ARRAY: return nullval;
     case FUNCTION:
       if (op == "&") return {ctx.builder.CreateBitCast(tv.value, llvm::Type::getInt8PtrTy(*ctx.context)), types::pointer::get(tv.type)};
       return nullval;
@@ -468,6 +486,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
+      case ARRAY: return nullval;
       case FUNCTION: return nullval;
       case NULLTYPE: return nullval;
       case CUSTOM: return nullval;
@@ -532,6 +551,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
+      case ARRAY: return nullval;
       case FUNCTION: return nullval;
       case NULLTYPE: return nullval;
       case CUSTOM: return nullval;
@@ -571,6 +591,7 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
         auto t = static_cast<types::reference const*>(lhs.type)->base;
         return binary_op(lhs, {ctx.builder.CreateLoad(t->llvm_type(loc, ctx), rhs.value), t}, op, loc, ctx);
       }
+      case ARRAY: return nullval;
       case FUNCTION: return nullval;
       case NULLTYPE: return nullval;
       case CUSTOM: return nullval;
@@ -761,12 +782,14 @@ static typed_value binary_op(typed_value lhs, typed_value rhs, std::string_view 
           }
           break;
         case REFERENCE: break;
+        case ARRAY: return nullval;
         case FUNCTION: return nullval;
         case NULLTYPE: return nullval;
         case CUSTOM: break;
       }
       return binary_op({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), lhs.value), t}, rhs, op, loc, ctx);
     }
+    case ARRAY: return nullval;
     case FUNCTION: return nullval;
     case NULLTYPE: return nullval;
     case CUSTOM: return nullval;
@@ -792,7 +815,10 @@ static typed_value call(typed_value tv, std::vector<typed_value>&& args, locatio
   switch (tv.type->kind) {
     case INTEGER:
     case FLOAT:
-    case POINTER: {
+    case POINTER:
+    case ARRAY:
+    case NULLTYPE:
+    case CUSTOM: {
       ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
       return nullval;
     }
@@ -813,12 +839,6 @@ static typed_value call(typed_value tv, std::vector<typed_value>&& args, locatio
       }
       return {ctx.builder.CreateCall(llvm::cast<llvm::FunctionType>(f->llvm_type(loc, ctx)), tv.value, args_v), f->ret};
     }
-    case NULLTYPE:
-      ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
-      return nullval;
-    case CUSTOM:
-      ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
-      return nullval;
   }
 }
 static std::string concat(std::vector<std::string_view> const& vals, std::string_view other) {

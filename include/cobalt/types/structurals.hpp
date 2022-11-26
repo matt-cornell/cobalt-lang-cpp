@@ -23,6 +23,13 @@ namespace cobalt::types {
         return out;
       }
     };
+    struct arr_hash {
+      std::size_t operator()(std::pair<type_ptr, std::size_t> val) const noexcept {
+        std::size_t out = (uintptr_t)val.first + 0x9e3779b9;
+        out ^= val.second + 0x9e3779b9 + (out << 6) + (out >> 2);
+        return out;
+      }
+    };
   }
   struct tuple : type_base {
     std::vector<type_ptr> types;
@@ -53,6 +60,22 @@ namespace cobalt::types {
   private:
     variant(std::unordered_set<type_ptr> const& types) : type_base(CUSTOM), types(types) {}
     inline static std::unordered_map<std::unordered_set<type_ptr>, std::unique_ptr<variant>, variant_hash> instances;
+  };
+  struct array : type_base {
+    type_ptr base;
+    std::size_t length;
+    sstring name() const override {return sstring::get((llvm::Twine(base->name()) + "[" + (length + 1 ? llvm::Twine(length) : llvm::Twine("")) + "]").str());}
+    std::size_t size() const override {return sizeof(void*) * (length + 1 ? 2 : 1);}
+    std::size_t align() const override {return sizeof(void*);}
+    llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return length + 1 ? (llvm::Type*)llvm::ArrayType::get(base->llvm_type(loc, ctx), length) : (llvm::Type*)llvm::StructType::get(llvm::ArrayType::get(base->llvm_type(loc, ctx), 0), llvm::Type::getInt64Ty(*ctx.context));}
+    static array const* get(type_ptr base, std::size_t length = -1) {
+      auto it = instances.find(std::pair<type_ptr, std::size_t>{base, length});
+      if (it == instances.end()) it = instances.insert({std::pair<type_ptr, std::size_t>{base, length}, COBALT_MAKE_UNIQUE(array, base, length)}).first;
+      return it->second.get();
+    }
+  private:
+    array(type_ptr base, std::size_t length) : type_base(ARRAY), base(base), length(length) {}
+    inline static std::unordered_map<std::pair<type_ptr, std::size_t>, std::unique_ptr<array>, arr_hash> instances;
   };
   struct struct_ : type_base {
     enum layout_t {C, EFFICIENT, PACKED};

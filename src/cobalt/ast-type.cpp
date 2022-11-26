@@ -6,7 +6,8 @@ const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = ss
 type_ptr get_call(type_ptr t, std::vector<type_ptr> const& args) {return nullptr;}
 type_ptr get_sub(type_ptr t, std::vector<type_ptr> const& args) {
   switch (t->kind) {
-    case REFERENCE: return get_sub(static_cast<types::reference const*>(t)->base, args);
+    case REFERENCE: return args.size() == 1 && args.front()->kind == INTEGER ? get_sub(static_cast<types::reference const*>(t)->base, args) : nullptr;
+    case ARRAY: return args.size() == 1 && args.front()->kind == INTEGER ? get_sub(static_cast<types::reference const*>(t)->base, args) : nullptr;
     case POINTER: return types::reference::get(static_cast<types::pointer const*>(t)->base);
     default: return nullptr;
   }
@@ -28,6 +29,7 @@ type_ptr get_unary(type_ptr t, sstring op) {
     case REFERENCE:
       if (op == "&") return types::pointer::get(static_cast<types::reference const*>(t)->base);
       return get_unary(static_cast<types::reference const*>(t), op);
+    case ARRAY: return nullptr;
     case NULLTYPE: return nullptr;
     case FUNCTION:
       if (op == "&") return t;
@@ -65,6 +67,7 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         if (op == "+" || op == "-") return rhs;
         return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
+      case ARRAY: return nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -78,6 +81,7 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         return nullptr;
       case POINTER: return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
+      case ARRAY: return nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -91,11 +95,13 @@ type_ptr get_binary(type_ptr lhs, type_ptr rhs, sstring op) {
         if (op == "-") return types::integer::get(sizeof(void*) * 8);
         return nullptr;
       case REFERENCE: return get_binary(lhs, static_cast<types::reference const*>(rhs)->base, op);
+      case ARRAY: return nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
     }
     case REFERENCE: return get_binary(static_cast<types::reference const*>(lhs)->base, rhs, op);
+    case ARRAY: return nullptr;
     case FUNCTION: return nullptr;
     case NULLTYPE: return nullptr;
     case CUSTOM: return nullptr;
@@ -107,10 +113,10 @@ static type_ptr get_call(type_ptr self, std::vector<type_ptr>&& args) {
     case FLOAT:
     case POINTER:
     case NULLTYPE:
+    case ARRAY:
       return nullptr;
     case REFERENCE: return get_call(static_cast<types::reference const*>(self)->base, args);
-    case FUNCTION:
-      return static_cast<types::function const*>(self)->ret;
+    case FUNCTION: return static_cast<types::function const*>(self)->ret;
     case CUSTOM: return nullptr;
   }
 }

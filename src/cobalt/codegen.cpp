@@ -1094,10 +1094,10 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
         ctx.vars = ctx.vars->parent;
         delete vars;
         ctx.builder.SetInsertPoint(ip);
-        if (name.front() == '.') std::swap(ctx.path, old_path);
-        else ctx.path.pop_back();
         if (!link_as.empty()) llvm::GlobalAlias::create(ft, 0, llvm::GlobalValue::ExternalLinkage, link_as, f, ctx.module.get());
       }
+      if (name.front() == '.') std::swap(ctx.path, old_path);
+      else ctx.path.pop_back();
     }
   }
   return nullval;

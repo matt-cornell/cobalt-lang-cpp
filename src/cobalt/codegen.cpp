@@ -1096,6 +1096,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
         ctx.builder.SetInsertPoint(ip);
         if (!link_as.empty()) llvm::GlobalAlias::create(ft, 0, llvm::GlobalValue::ExternalLinkage, link_as, f, ctx.module.get());
       }
+      else ctx.builder.CreateRetVoid();
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
     }
@@ -1355,6 +1356,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
         return nullval;
       }
       ctx.builder.CreateStore(tv.value, gv);
+      ctx.builder.CreateRetVoid();
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});
@@ -1448,6 +1450,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
         return nullval;
       }
       ctx.builder.CreateStore(tv.value, gv);
+      ctx.builder.CreateRetVoid();
       ctx.builder.SetInsertPoint((llvm::BasicBlock*)nullptr);
       auto type = types::reference::get(ct);
       vm->insert(sstring::get(local), typed_value{gv, type});

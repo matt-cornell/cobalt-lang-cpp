@@ -1054,7 +1054,14 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     else ctx.flags.onerror(loc, "unknown annotation @" + ann, ERROR);
   }
   auto ft = llvm::FunctionType::get(t->llvm_type(loc, ctx), params_t, false);
-  if (is_extern && !link_as.empty()) llvm::GlobalAlias::create(ft, 0, link_type, concat(ctx.path, name), llvm::cast<llvm::Function>(ctx.module->getOrInsertFunction(link_as, ft).getCallee()), ctx.module.get());
+  alignas(sstring) char local_mem[sizeof(sstring)];
+  sstring& local = reinterpret_cast<sstring&>(local_mem[0]);
+  {
+    auto idx = name.rfind('.') + 1;
+    if (idx) local = sstring::get(name.substr(idx));
+    else local = sstring::get(name);
+  }
+  if (is_extern && !link_as.empty()) ctx.vars->insert(local, typed_value{llvm::GlobalAlias::create(ft, 0, link_type, concat(ctx.path, name), llvm::cast<llvm::Function>(ctx.module->getOrInsertFunction(link_as, ft).getCallee()), ctx.module.get()), types::function::get(t, std::vector<type_ptr>(args_t))});
   else {
     auto f = llvm::Function::Create(ft, link_type, name.front() == '.' ? std::string_view(name) : concat(ctx.path, name), *ctx.module);;
     if (!f) return nullval;
@@ -1063,7 +1070,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
       std::size_t i = 0;
       for (auto& arg : f->args()) if (!args[i].first.empty()) arg.setName(args[i].first);
     }
-    ctx.vars->insert(name, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
+    ctx.vars->insert(local, typed_value{f, types::function::get(t, std::vector<type_ptr>(args_t))});
     if (!is_extern) {
       if (name.front() == '.') {
         old_path = ctx.path;

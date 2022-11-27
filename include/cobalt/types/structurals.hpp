@@ -73,8 +73,8 @@ namespace cobalt::types {
     std::size_t align() const override {return alignof(void*);}
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override {
       auto bt = base->llvm_type(loc, ctx);
-      if (length + 1) return llvm::StructType::get(llvm::ArrayType::get(bt, 0), llvm::Type::getInt64Ty(*ctx.context));
-      else return llvm::ArrayType::get(bt, length);
+      if (length + 1) return llvm::StructType::get(llvm::PointerType::get(bt, 0), llvm::Type::getInt64Ty(*ctx.context));
+      else return llvm::PointerType::get(bt, 0);
     }
     static array const* get(type_ptr base, std::size_t length = -1) {
       if (!base) return nullptr;

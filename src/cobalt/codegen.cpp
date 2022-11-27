@@ -224,7 +224,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
       case FLOAT: return nullptr;
       case POINTER: return ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx));
       case REFERENCE: return nullptr;
-      case ARRAY: return static_cast<types::pointer const*>(t1)->base == static_cast<types::array const*>(t2)->base ? v : nullptr;
+      case ARRAY: return static_cast<types::pointer const*>(t1)->base == static_cast<types::array const*>(t2)->base ? ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx)) : nullptr;
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;
@@ -237,7 +237,7 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
     case ARRAY: switch (t2->kind) {
       case INTEGER: return nullptr;
       case FLOAT: return nullptr;
-      case POINTER: return static_cast<types::array const*>(t1)->base == static_cast<types::pointer const*>(t2)->base ? v : nullptr;
+      case POINTER: return static_cast<types::array const*>(t1)->base == static_cast<types::pointer const*>(t2)->base ? ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx)) : nullptr;
       case REFERENCE: return nullptr;
       case ARRAY: return nullptr;
       case FUNCTION: return nullptr;

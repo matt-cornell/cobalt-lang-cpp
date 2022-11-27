@@ -238,9 +238,27 @@ static llvm::Value* expl_convert(llvm::Value* v, type_ptr t1, type_ptr t2, locat
     case ARRAY: switch (t2->kind) {
       case INTEGER: return nullptr;
       case FLOAT: return nullptr;
-      case POINTER: return static_cast<types::array const*>(t1)->base == static_cast<types::pointer const*>(t2)->base ? ctx.builder.CreateBitCast(v, t2->llvm_type(loc, ctx)) : nullptr;
+      case POINTER: {
+        auto a1 = static_cast<types::array const*>(t1);
+        if (static_cast<types::pointer const*>(t2)->base != a1->base) return nullptr;
+        if (a1->length + 1) return v;
+        else return ctx.builder.CreateConstGEP2_32(llvm::PointerType::get(a1->llvm_type(loc, ctx), 0), v, 0, 0);
+      }
       case REFERENCE: return nullptr;
-      case ARRAY: return nullptr;
+      case ARRAY: {
+        auto a1 = static_cast<types::array const*>(t1), a2 = static_cast<types::array const*>(t2);
+        if (a1->base != a2->base) return nullptr;
+        if (a1->length + 1) {
+          if (a2->length + 1) return v;
+          else {
+            auto a = ctx.builder.CreateAlloca(a1->llvm_type(loc, ctx));
+            ctx.builder.CreateStore(ctx.builder.CreateConstGEP2_32(llvm::PointerType::get(a1->llvm_type(loc, ctx), 0), a, 0, 0), v);
+            ctx.builder.CreateStore(ctx.builder.CreateConstGEP2_32(llvm::PointerType::get(a1->llvm_type(loc, ctx), 0), a, 0, 1), ctx.builder.getInt64(a2->length));
+            return a;
+          }
+        }
+        else return ctx.builder.CreateConstGEP2_32(llvm::PointerType::get(a1->llvm_type(loc, ctx), 0), v, 0, 0);
+      }
       case FUNCTION: return nullptr;
       case NULLTYPE: return nullptr;
       case CUSTOM: return nullptr;

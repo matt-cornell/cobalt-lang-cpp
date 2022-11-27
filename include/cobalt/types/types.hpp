@@ -16,6 +16,7 @@ namespace cobalt {
       type_base(type_base const&) = delete;
       type_base(type_base&&) = delete;
       virtual ~type_base() = 0;
+      virtual bool needs_stack() const noexcept {return false;}
       virtual sstring name() const = 0;
       virtual std::size_t size() const = 0;
       virtual std::size_t align() const = 0;

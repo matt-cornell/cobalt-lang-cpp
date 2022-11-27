@@ -1015,6 +1015,7 @@ typed_value cobalt::ast::fndef_ast::codegen(compile_context& ctx) const {
     }
     args_t[i] = t;
     params_t[i] = t->llvm_type(loc, ctx);
+    if (t->needs_stack()) params_t[i] = llvm::PointerType::get(params_t[i], 0);
   }
   auto t = parse_type(ret);
   if (!t) {
@@ -1412,7 +1413,27 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     if (!tv.type) return nullval;
     if (!llvm::isa<llvm::GlobalValue>(tv.value)) tv.value->setName(name);
     vm->insert(sstring::get(local), tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? typed_value{tv.value, types::integer::get(64)} : tv);
-    return tv;
+    if (tv.type->needs_stack()) {
+      llvm::Value* a;
+      switch (tv.type->kind) {
+        case FUNCTION:
+          a = ctx.builder.CreateAlloca(llvm::Type::getInt8Ty(*ctx.context), nullptr, name);
+          break;
+        case INTEGER:
+          if (!static_cast<types::integer const*>(tv.type)->nbits) a = ctx.builder.CreateAlloca(llvm::Type::getInt64Ty(*ctx.context), nullptr, name);
+          else goto ALLOCA_DEFAULT;
+          break;
+        case POINTER:
+          if (static_cast<types::pointer const*>(tv.type)->base->kind == FUNCTION) a = ctx.builder.CreateAlloca(llvm::Type::getInt8PtrTy(*ctx.context), nullptr, name);
+          else goto ALLOCA_DEFAULT;
+          break;
+        default: ALLOCA_DEFAULT:
+          a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
+      }
+      ctx.builder.CreateStore(tv.value, a);
+      return {a, tv.type};
+    }
+    else return tv;
   }
 }
 typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {

@@ -64,6 +64,7 @@ namespace cobalt::types {
   struct array : type_base {
     type_ptr base;
     std::size_t length;
+    bool needs_stack() const noexcept override {return true;}
     sstring name() const override {
       if (length + 1) return sstring::get((llvm::Twine(base->name()) + "[]").str());
       else return sstring::get((llvm::Twine(base->name()) + "[" + llvm::Twine(length) + "]").str());

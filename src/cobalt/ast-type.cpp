@@ -140,8 +140,9 @@ static type_ptr parse_type(sstring str) {
         case ']': ++depth; break;
       }
       if (depth) return nullptr;
+      if (it == &str.back() - 2) return types::array::get(parse_type(sstring::get(str.substr(0, it - str.data() + 1))), -1);
       std::size_t len = 0;
-      for (auto it2 = it + 2; it2 != &str.back() - 1; ++it2) {
+      for (auto it2 = it + 2; it2 != &str.back(); ++it2) {
         if (*it2 < '0' || *it2 > '9') return nullptr;
         len *= 10;
         len += *it2 - '0';

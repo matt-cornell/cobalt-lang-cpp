@@ -845,6 +845,133 @@ static std::string invalid_args(typed_value tv, std::vector<typed_value>&& args)
   }
   return str;
 }
+static std::string invalid_subs(typed_value tv, std::vector<typed_value>&& args) {
+  std::string str = "cannot subscript value of type ";
+  str += tv.type->name();
+  if (args.empty()) str += " without arguments";
+  else {
+    str += " with argument types (";
+    for (auto [_, t] : args) {
+      str += t->name();
+      str += ", ";
+    }
+    str.pop_back();
+    str.back() = ')';
+  }
+  return str;
+}
+static typed_value subscr(typed_value tv, std::vector<typed_value>&& args, location loc, compile_context& ctx) {
+  if (!tv.type) return nullval;
+  switch (tv.type->kind) {
+    case INTEGER:
+    case FLOAT:
+    case FUNCTION:
+    case NULLTYPE:
+    case CUSTOM:
+      ctx.flags.onerror(loc, invalid_subs(tv, std::move(args)), ERROR);
+      return nullval;
+    case REFERENCE: {
+      auto t = static_cast<types::reference const*>(tv.type)->base;
+      return subscr({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), tv.value), t}, std::move(args), loc, ctx);
+    }
+    case POINTER: {
+      if (args.size() != 1) {
+        ctx.flags.onerror(loc, invalid_subs(tv, std::move(args)), ERROR);
+      }
+      auto idx = args.front().value;
+      auto aft = args.front().type;
+      while (aft->kind == REFERENCE) {
+        auto b = static_cast<types::reference const*>(aft);
+        idx = ctx.builder.CreateLoad(b->llvm_type(loc, ctx), idx);
+        aft = b;
+      }
+      if (aft->kind != INTEGER) {
+        ctx.flags.onerror(loc, invalid_subs(tv, std::move(args)), ERROR);
+        return nullval;
+      }
+      auto pt = llvm::Type::getIntNTy(*ctx.context, sizeof(void*) * 8);
+      auto base = static_cast<types::pointer const*>(tv.type)->base;
+      auto v1 = ctx.builder.CreatePtrToInt(tv.value, pt);
+      auto v2 = ctx.builder.CreateMul(idx, llvm::ConstantInt::get(pt, base->size()));
+      auto v3 = ctx.builder.CreateAdd(v1, v2);
+      auto v4 = ctx.builder.CreateIntToPtr(v3, tv.type->llvm_type(loc, ctx));
+      return {v4, types::reference::get(base)};
+    }
+    case ARRAY: {
+      auto t = static_cast<types::array const*>(tv.type);
+      if (args.size() != 1) {
+        ctx.flags.onerror(loc, invalid_subs(tv, std::move(args)), ERROR);
+      }
+      auto idx = args.front().value;
+      auto aft = args.front().type;
+      while (aft->kind == REFERENCE) {
+        auto b = static_cast<types::reference const*>(aft)->base;
+        idx = ctx.builder.CreateLoad(b->llvm_type(loc, ctx), idx);
+        aft = b;
+      }
+      if (aft->kind != INTEGER) {
+        ctx.flags.onerror(loc, invalid_subs(tv, std::move(args)), ERROR);
+        return nullval;
+      }
+      auto i = idx->getType();
+      auto pt = llvm::Type::getInt64Ty(*ctx.context);
+      auto ip = ctx.builder.GetInsertBlock();
+      auto f = ip->getParent();
+      auto
+        bc = llvm::BasicBlock::Create(*ctx.context, "arr.bc"), // bounds check (<0)
+        lt0 = llvm::BasicBlock::Create(*ctx.context, "arr.lt0"), // less than 0
+        m1 = llvm::BasicBlock::Create(*ctx.context, "arr.m1"), // merge <0 and >=0 indices
+        m2 = llvm::BasicBlock::Create(*ctx.context, "arr.m2"); // merge valid and invalid indices
+      llvm::Value* arr, * len;
+      llvm::Type* at;
+      if (t->length + 1) {
+        at = t->llvm_type(loc, ctx);
+        arr = tv.value;
+        len = llvm::ConstantInt::get(i, t->length);
+      }
+      else {
+        auto st = t->llvm_type(loc, ctx);
+        at = llvm::cast<llvm::StructType>(st)->getTypeAtIndex((unsigned)0);
+        arr = ctx.builder.CreateConstGEP2_32(llvm::PointerType::get(st, 0), tv.value, 0, 0);
+        if (i == pt) len = ctx.builder.CreateConstGEP2_32(llvm::PointerType::get(st, 0), tv.value, 0, 1);
+        else len = ctx.builder.CreateZExtOrTrunc(ctx.builder.CreateConstGEP2_32(llvm::PointerType::get(st, 0), tv.value, 0, 1), i);
+      }
+      auto cmp1 = ctx.builder.CreateICmpSGE(idx, len); // idx >= len
+      ctx.builder.CreateCondBr(cmp1, m2, bc); // nullptr : idx < 0
+      f->getBasicBlockList().push_back(bc);
+      ctx.builder.SetInsertPoint(bc);
+      auto cmp2 = ctx.builder.CreateICmpSLT(idx, llvm::ConstantInt::get(i, 0)); // idx < 0
+      ctx.builder.CreateCondBr(cmp2, lt0, m1); // idx + len : idx
+      bc = ctx.builder.GetInsertBlock();
+      f->getBasicBlockList().push_back(lt0);
+      ctx.builder.SetInsertPoint(lt0);
+      auto add1 = ctx.builder.CreateAdd(idx, len);
+      auto bcv = ctx.builder.CreateZExtOrTrunc(add1, i);
+      auto cmp3 = ctx.builder.CreateICmpSLT(add1, llvm::ConstantInt::get(i, 0)); // idx + len < 0
+      ctx.builder.CreateCondBr(cmp3, m2, m1); // nullptr : idx + len
+      lt0 = ctx.builder.GetInsertBlock();
+      f->getBasicBlockList().push_back(m1);
+      ctx.builder.SetInsertPoint(m1);
+      auto phi1 = ctx.builder.CreatePHI(i, 2); // combine idx, idx + len
+      phi1->addIncoming(idx, bc);
+      phi1->addIncoming(bcv, lt0);
+      auto av = ctx.builder.CreatePtrToInt(arr, pt);
+      auto idx1 = ctx.builder.CreateMul(phi1, llvm::ConstantInt::get(pt, t->base->size()));
+      auto add2 = ctx.builder.CreateAdd(av, idx1);
+      auto pv = ctx.builder.CreateIntToPtr(add2, arr->getType());
+      ctx.builder.CreateBr(m2);
+      m1 = ctx.builder.GetInsertBlock();
+      f->getBasicBlockList().push_back(m2);
+      ctx.builder.SetInsertPoint(m2);
+      auto np = llvm::Constant::getNullValue(arr->getType());
+      auto phi2 = ctx.builder.CreatePHI(arr->getType(), 3); // combine arr[idx], nullptr
+      phi2->addIncoming(pv, m1);
+      phi2->addIncoming(np, ip);
+      phi2->addIncoming(np, lt0);
+      return {phi2, types::reference::get(t->base)};
+    }
+  }
+}
 static typed_value call(typed_value tv, std::vector<typed_value>&& args, location loc, compile_context& ctx) {
   if (!tv.type) return nullval;
   switch (tv.type->kind) {
@@ -1014,7 +1141,13 @@ typed_value cobalt::ast::unop_ast::codegen(compile_context& ctx) const {
   }
   return nullval;
 }
-typed_value cobalt::ast::subscr_ast::codegen(compile_context& ctx) const {(void)ctx; return nullval;}
+typed_value cobalt::ast::subscr_ast::codegen(compile_context& ctx) const {
+  auto self = val(ctx);
+  std::vector<typed_value> args_v(args.size());
+  for (std::size_t i = 0; i < args.size(); ++i) args_v[i] = args[i](ctx);
+  auto tv = subscr(self, std::move(args_v), loc, ctx);
+  return tv;
+}
 typed_value cobalt::ast::call_ast::codegen(compile_context& ctx) const {
   auto self = val(ctx);
   std::vector<typed_value> args_v(args.size());

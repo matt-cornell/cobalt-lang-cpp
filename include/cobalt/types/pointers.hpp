@@ -12,6 +12,7 @@ namespace cobalt::types {
     std::size_t align() const override {return 8;}
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return llvm::PointerType::get(base->llvm_type(loc, ctx), 0);}
     static pointer const* get(type_ptr base) {
+      if (!base) return nullptr;
       auto it = instances.find(base);
       if (it == instances.end()) it = instances.insert({base, COBALT_MAKE_UNIQUE(pointer, base)}).first;
       return it->second.get();
@@ -27,6 +28,7 @@ namespace cobalt::types {
     std::size_t align() const override {return 8;}
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return llvm::PointerType::get(base->llvm_type(loc, ctx), 0);}
     static reference const* get(type_ptr base) {
+      if (!base) return nullptr;
       auto it = instances.find(base);
       if (it == instances.end()) it = instances.insert({base, COBALT_MAKE_UNIQUE(reference, base)}).first;
       return it->second.get();
@@ -42,6 +44,7 @@ namespace cobalt::types {
     std::size_t align() const override {return base->align();}
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return base->llvm_type(loc, ctx);}
     static borrow const* get(type_ptr base) {
+      if (!base) return nullptr;
       auto it = instances.find(base);
       if (it == instances.end()) it = instances.insert({base, COBALT_MAKE_UNIQUE(borrow, base)}).first;
       return it->second.get();

@@ -69,6 +69,7 @@ namespace cobalt::types {
     std::size_t align() const override {return sizeof(void*);}
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return length + 1 ? (llvm::Type*)llvm::ArrayType::get(base->llvm_type(loc, ctx), length) : (llvm::Type*)llvm::StructType::get(llvm::ArrayType::get(base->llvm_type(loc, ctx), 0), llvm::Type::getInt64Ty(*ctx.context));}
     static array const* get(type_ptr base, std::size_t length = -1) {
+      if (!base) return nullptr;
       auto it = instances.find(std::pair<type_ptr, std::size_t>{base, length});
       if (it == instances.end()) it = instances.insert({std::pair<type_ptr, std::size_t>{base, length}, COBALT_MAKE_UNIQUE(array, base, length)}).first;
       return it->second.get();

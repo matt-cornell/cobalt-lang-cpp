@@ -89,7 +89,6 @@ std::pair<sstring, span<token>::iterator> parse_type(span<token> code, flags_t f
         break;
       case '(':
       case ')':
-      case '[':
       case ']':
       case '{':
       case '}':
@@ -127,8 +126,6 @@ std::pair<sstring, span<token>::iterator> parse_type(span<token> code, flags_t f
           switch (tok.front()) {
             case '(':
             case ')':
-            case '[':
-            case ']':
             case '{':
             case '}':
             case ':':
@@ -155,6 +152,138 @@ std::pair<sstring, span<token>::iterator> parse_type(span<token> code, flags_t f
               }
               name += tok;
               break;
+            case '[':
+              name += tok;
+              switch ((++it)->data.front()) {
+                case '0': {
+                  constexpr char nums[] = "0123456789";
+                  std::size_t sz;
+                  std::memcpy(&sz, &it->data[1], 8);
+                  long len = std::ceil(std::log10(sz)) + 1;
+                  std::string str(len, '\0');
+                  for (--len; len >= 0; --len) {
+                    str[len] = nums[sz % 10];
+                    sz /= 10;
+                  }
+                  name += str;
+                  if ((++it)->data.front() != ']') {
+                    flags.onerror(it->loc, "array size must be an integer literal", ERROR);
+                    return {sstring::get(""), it};
+                  }
+                }
+                case ']': name += ']'; break;
+                default:
+                  flags.onerror(it->loc, "array size must be an integer literal", ERROR);
+                  return {sstring::get(""), it};
+              }
+              break;
+            case ']':
+              flags.onerror(it->loc, "unmatched closing bracket", ERROR);
+              return {sstring::get(""), it};
+            default:
+              flags.onerror(it->loc, "invalid characters after type suffix", ERROR);
+              return {sstring::get(""), it};
+          }
+        }
+        goto PT_END;
+      case '[':
+        if (lwp) {
+          flags.onerror(it->loc, "type name cannot end with a period", ERROR);
+          name.pop_back();
+          name += tok;
+        }
+        else name += tok;
+        if (it + 1 == end) {
+          flags.onerror(it->loc, "unmatched opening bracket", ERROR);
+          return {sstring::get(""), it};
+        }
+        switch ((++it)->data.front()) {
+          case '0': {
+            constexpr char nums[] = "0123456789";
+            std::size_t sz;
+            std::memcpy(&sz, &it->data[1], 8);
+            long len = std::ceil(std::log10(sz)) + 1;
+            std::string str(len, '\0');
+            for (--len; len >= 0; --len) {
+              str[len] = nums[sz % 10];
+              sz /= 10;
+            }
+            name += str;
+            if (it + 1 == end) {
+              flags.onerror((it - 1)->loc, "unmatched opening bracket", ERROR);
+              return {sstring::get(""), it};
+            }
+            if ((++it)->data.front() != ']') {
+              flags.onerror(it->loc, "array size must be an integer literal", ERROR);
+              return {sstring::get(""), it};
+            }
+          }
+          case ']': name += ']'; break;
+          default:
+            flags.onerror(it->loc, "array size must be an integer literal", ERROR);
+            return {sstring::get(""), it};
+        }
+        for (++it; it != end; ++it) {
+          std::string_view tok = it->data;
+          if (exit_chars.find(tok.front()) != std::string::npos) goto PT_END;
+          std::size_t depth = 0;
+          switch (tok.front()) {
+            case '(':
+            case ')':
+            case '{':
+            case '}':
+            case ':':
+            case ';':
+            case ',':
+            case '/':
+            case '%':
+            case '!':
+            case '~':
+            case '+':
+            case '-':
+            case '|':
+            case '<':
+            case '>':
+            case '=':
+              flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+              return {sstring::get(""), it};
+            case '&':
+            case '*':
+            case '^':
+              if (tok.size() > 1 && tok[1] != tok.front()) {
+                flags.onerror(it->loc, (llvm::Twine("invalid character '") + tok + "' in type name").str(), ERROR);
+                return {sstring::get(""), it};
+              }
+              name += tok;
+              break;
+            case '[':
+              name += tok;
+              switch ((++it)->data.front()) {
+                case '0': {
+                  constexpr char nums[] = "0123456789";
+                  std::size_t sz;
+                  std::memcpy(&sz, &it->data[1], 8);
+                  long len = std::ceil(std::log10(sz)) + 1;
+                  std::string str(len, '\0');
+                  for (--len; len >= 0; --len) {
+                    str[len] = nums[sz % 10];
+                    sz /= 10;
+                  }
+                  name += str;
+                  if ((++it)->data.front() != ']') {
+                    flags.onerror(it->loc, "array size must be an integer literal", ERROR);
+                    return {sstring::get(""), it};
+                  }
+                }
+                case ']': name += ']'; break;
+                default:
+                  flags.onerror(it->loc, "array size must be an integer literal", ERROR);
+                  return {sstring::get(""), it};
+              }
+              break;
+            case ']':
+              flags.onerror(it->loc, "unmatched closing bracket", ERROR);
+              return {sstring::get(""), it};
             default:
               flags.onerror(it->loc, "invalid characters after type suffix", ERROR);
               return {sstring::get(""), it};
@@ -464,7 +593,7 @@ AST parse_ltr_infix(span<token> code, flags_t flags, binary_operator const* star
         --it;
       } break;
       default:
-        if (it + 1 != end) {
+        if (it + 1 != end && (it + 1)->data.front() != ':') {
           for (auto op : ops) if (tok == op.op) {
             AST lhs = nullptr, rhs = nullptr;
             if (ptr == bin_ops.end()) {

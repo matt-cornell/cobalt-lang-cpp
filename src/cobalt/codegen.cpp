@@ -11,6 +11,22 @@ static type_ptr parse_type(sstring str) {
     case '&': return types::reference::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
     case '*': return types::pointer::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
     case '^': return types::borrow::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
+    case ']': {
+      std::size_t depth = 1;
+      auto it = &str.back() - 1;
+      for (; depth && it != str.data(); --it) switch (*it) {
+        case '[': --depth; break;
+        case ']': ++depth; break;
+      }
+      if (depth) return nullptr;
+      std::size_t len = 0;
+      for (it += 2; it != &str.back() - 1; ++it) {
+        if (*it < '0' || *it > '9') return nullptr;
+        len *= 10;
+        len += *it - '0';
+      }
+      return types::array::get(parse_type(sstring::get(str.substr(0, it - str.data() + 1))), len);
+    };
   }
   if (str == bool_) return types::integer::get(1);
   if (str == null) return types::null::get();
@@ -818,10 +834,9 @@ static typed_value call(typed_value tv, std::vector<typed_value>&& args, locatio
     case POINTER:
     case ARRAY:
     case NULLTYPE:
-    case CUSTOM: {
+    case CUSTOM:
       ctx.flags.onerror(loc, invalid_args(tv, std::move(args)), ERROR);
       return nullval;
-    }
     case REFERENCE: {
       auto t = static_cast<types::reference const*>(tv.type)->base;
       return call({ctx.builder.CreateLoad(t->llvm_type(loc, ctx), tv.value), t}, std::move(args), loc, ctx);

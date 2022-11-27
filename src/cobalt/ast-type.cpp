@@ -3,7 +3,13 @@
 using namespace cobalt;
 using enum types::type_base::kind_t;
 const static auto f16 = sstring::get("f16"), f32 = sstring::get("f32"), f64 = sstring::get("f64"), f128 = sstring::get("f128"), isize = sstring::get("isize"), usize = sstring::get("usize"), bool_ = sstring::get("bool"), null = sstring::get("null");
-type_ptr get_call(type_ptr t, std::vector<type_ptr> const& args) {return nullptr;}
+type_ptr get_call(type_ptr t, std::vector<type_ptr> const& args) {
+  switch (t->kind) {
+    case REFERENCE: return get_call(static_cast<types::reference const*>(t)->base, args);
+    case FUNCTION: return static_cast<types::function const*>(t)->ret;
+    default: return nullptr;
+  }
+}
 type_ptr get_sub(type_ptr t, std::vector<type_ptr> const& args) {
   switch (t->kind) {
     case REFERENCE: return args.size() == 1 && args.front()->kind == INTEGER ? get_sub(static_cast<types::reference const*>(t)->base, args) : nullptr;
@@ -126,6 +132,23 @@ static type_ptr parse_type(sstring str) {
     case '&': return types::reference::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
     case '*': return types::pointer::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
     case '^': return types::borrow::get(parse_type(sstring::get(str.substr(0, str.size() - 1))));
+    case ']': {
+      std::size_t depth = 1;
+      auto it = &str.back();
+      for (; depth && it != str.data(); --it) switch (*it) {
+        case '[': --depth; break;
+        case ']': ++depth; break;
+      }
+      if (depth) return nullptr;
+      std::size_t len = 0;
+      llvm::outs() << *it << *(it + 1) << *(it + 2) << '\n';
+      for (it += 2; it != &str.back() - 1; ++it) {
+        if (*it < '0' || *it > '9') return nullptr;
+        len *= 10;
+        len += *it - '0';
+      }
+      return types::array::get(parse_type(sstring::get(str.substr(0, it - str.data() + 1))), len);
+    };
   }
   if (str == bool_) return types::integer::get(1);
   if (str == null) return types::null::get();

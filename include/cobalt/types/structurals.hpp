@@ -64,10 +64,17 @@ namespace cobalt::types {
   struct array : type_base {
     type_ptr base;
     std::size_t length;
-    sstring name() const override {return sstring::get((llvm::Twine(base->name()) + "[" + (length + 1 ? llvm::Twine(length) : llvm::Twine("")) + "]").str());}
-    std::size_t size() const override {return sizeof(void*) * (length + 1 ? 2 : 1);}
-    std::size_t align() const override {return sizeof(void*);}
-    llvm::Type* llvm_type(location loc, compile_context& ctx) const override {return length + 1 ? (llvm::Type*)llvm::ArrayType::get(base->llvm_type(loc, ctx), length) : (llvm::Type*)llvm::StructType::get(llvm::ArrayType::get(base->llvm_type(loc, ctx), 0), llvm::Type::getInt64Ty(*ctx.context));}
+    sstring name() const override {
+      if (length + 1) return sstring::get((llvm::Twine(base->name()) + "[]").str());
+      else return sstring::get((llvm::Twine(base->name()) + "[" + llvm::Twine(length) + "]").str());
+    }
+    std::size_t size() const override {return sizeof(void*) * (length + 1 ? 1 : 2);}
+    std::size_t align() const override {return alignof(void*);}
+    llvm::Type* llvm_type(location loc, compile_context& ctx) const override {
+      auto bt = base->llvm_type(loc, ctx);
+      if (length + 1) return llvm::StructType::get(llvm::ArrayType::get(bt, 0), llvm::Type::getInt64Ty(*ctx.context));
+      else return llvm::ArrayType::get(bt, length);
+    }
     static array const* get(type_ptr base, std::size_t length = -1) {
       if (!base) return nullptr;
       auto it = instances.find(std::pair<type_ptr, std::size_t>{base, length});

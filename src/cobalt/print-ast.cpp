@@ -111,6 +111,11 @@ void cobalt::ast::char_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix
   if (!suffix.empty()) os << ", suffix: " << suffix;
   os << '\n';
 }
+void cobalt::ast::array_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
+  print_self(os, "array");
+  auto* last = &vals.back();
+  for (AST const& val : vals) print_node(os, prefix, val, &val == last);
+}
 // scope.hpp
 void cobalt::ast::module_ast::print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const {
   print_self(os, llvm::Twine("module ") + name);

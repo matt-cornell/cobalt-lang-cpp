@@ -43,7 +43,7 @@ namespace cobalt {
       other.ptr = nullptr;
       return *this;
     }
-    bool is_const() const noexcept {return ptr->is_const();}
+    bool is_const() const noexcept {return ptr && ptr->is_const();}
     location loc() const noexcept {return ptr ? ptr->loc : nullloc;}
     sstring file() const noexcept {return ptr ? ptr->loc.file : sstring::get("");}
     std::size_t line() const noexcept {return ptr ? ptr->loc.line : 0;}

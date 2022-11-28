@@ -331,7 +331,7 @@ AST parse_groups(span<token> code, flags_t flags) {
   if (code.empty()) return AST::create<ast::null_ast>(nullloc);
   switch (code.front().data.front()) {
     case '(': {
-      if (code.back().data.front() != ')') flags.onerror(code.front().loc, "unmatched opening parententhesis", ERROR);
+      if (code.back().data.front() != ')') flags.onerror(code.front().loc, "unmatched opening parenthesis", ERROR);
       std::size_t depth = 1;
       auto it = code.begin(), end = code.end();
       std::vector<AST> nodes;
@@ -340,15 +340,15 @@ AST parse_groups(span<token> code, flags_t flags) {
       while (it != end && depth) {
         auto [a, i] = parse_expr({it, end}, flags, ";)");
         nodes.push_back(std::move(a));
-        it = i;
-        if (it != end) switch (it->data.front()) {
+        it = i + 1;
+        if (i != end) switch (i->data.front()) {
           case '(': ++depth; break;
           case ')': --depth; break;
           case ';': break;
-          default: flags.onerror(it->loc, "missing semicolon in paranthetical grouping", ERROR);
+          default: flags.onerror(i->loc, "missing semicolon in paranthetical grouping", ERROR);
         }
       }
-      if (it == end && depth) flags.onerror((it - 1)->loc, "parenthetical grouping missing closing parenthesis", ERROR);
+      if (depth) flags.onerror((it - 1)->loc, "group missing closing parenthesis", ERROR);
       switch (nodes.size()) {
         case 0: return AST::create<ast::null_ast>((it - 1)->loc);
         case 1: return std::move(nodes.front());
@@ -357,22 +357,44 @@ AST parse_groups(span<token> code, flags_t flags) {
     } break;
     case '{': {
       if (code.back().data.front() != '}') flags.onerror(code.front().loc, "unmatched opening brace", ERROR);
+      std::size_t depth = 1;
       auto it = code.begin(), end = code.end();
       std::vector<AST> nodes;
       ++it;
       if (it->data.front() == '}') return AST::create<ast::null_ast>((it - 1)->loc);
-      while (it != end) {
+      while (it != end && depth) {
         auto [a, i] = parse_statement({it, end}, flags);
         nodes.push_back(std::move(a));
-        it = i;
-        if (it != end) switch (it->data.front()) {
-          case ';':
-          case '}': break;
-          default: flags.onerror(it->loc, "missing semicolon in brace grouping", ERROR);
+        it = i + 1;
+        if (i != end) switch (i->data.front()) {
+          case ';': break;
+          case '{': ++depth; break;
+          case '}': --depth; break;
+          default: flags.onerror(i->loc, "missing semicolon in brace grouping", ERROR);
         }
-        ++it;
       }
       return AST::create<ast::block_ast>(it == end ? (it - 1)->loc : it->loc, std::move(nodes));
+    } break;
+    case '[': {
+      if (code.back().data.front() != ']') flags.onerror(code.front().loc, "unmatched opening bracket", ERROR);
+      std::size_t depth = 1;
+      auto it = code.begin(), end = code.end();
+      std::vector<AST> nodes;
+      ++it;
+      if (it->data.front() == ']') return AST::create<ast::null_ast>((it - 1)->loc);
+      while (it != end && depth) {
+        auto [a, i] = parse_expr({it, end}, flags, ",]");
+        nodes.push_back(std::move(a));
+        it = i + 1;
+        if (i != end) switch (i->data.front()) {
+          case '[': ++depth; break;
+          case ']': --depth; break;
+          case ',': break;
+          default: flags.onerror(i->loc, "missing comma between elements in array literal", ERROR);
+        }
+      }
+      if (depth) flags.onerror((it - 1)->loc, "array literal missing closing brace", ERROR);
+      return AST::create<ast::array_ast>(code.front().loc, std::move(nodes));
     } break;
     default:
       return parse_literals(code, flags);

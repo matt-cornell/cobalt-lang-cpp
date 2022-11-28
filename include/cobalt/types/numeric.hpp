@@ -8,11 +8,12 @@ namespace cobalt::types {
   struct integer : type_base {
     int nbits;
     sstring name() const override {return sstring::get((nbits < 0 ? llvm::Twine("u") + llvm::Twine(-nbits) : llvm::Twine("i") + llvm::Twine(nbits)).str());}
-    std::size_t size() const override {return (nbits + 7) / 8;}
+    std::size_t size() const override {return ((nbits < 0 ? -nbits : nbits) + 7) / 8;}
     std::size_t align() const override {
-      if (nbits <= 8) return 1;
-      if (nbits <= 16) return 2;
-      if (nbits <= 32) return 4;
+      auto anb = nbits < 0 ? -nbits : nbits;
+      if (anb <= 8) return 1;
+      if (anb <= 16) return 2;
+      if (anb <= 32) return 4;
       return 8;
     }
     llvm::Type* llvm_type(location, compile_context& ctx) const override {return llvm::Type::getIntNTy(*ctx.context, nbits < 0 ? -nbits : nbits);}

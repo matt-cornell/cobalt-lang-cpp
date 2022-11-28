@@ -46,5 +46,18 @@ namespace cobalt::ast {
   private:
     void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
   };
+  struct array_ast : ast_base {
+    std::vector<AST> vals;
+    bool is_static = false;
+    array_ast(location loc, std::vector<AST>&& vals) : ast_base(loc), CO_INIT(vals) {}
+    ~array_ast();
+    bool is_const() const noexcept override {for (auto const& val : vals) if (!val.is_const()) return false; return true;}
+    bool eq(ast_base const* other) const override {if (auto ptr = dynamic_cast<array_ast const*>(other)) return vals == ptr->vals; else return false;}
+    typed_value codegen(compile_context& ctx) const override;
+    type_ptr type(base_context& ctx) const override;
+  private:
+    void print_impl(llvm::raw_ostream& os, llvm::Twine prefix) const override;
+  };
+  inline array_ast::~array_ast() {}
 }
 #endif

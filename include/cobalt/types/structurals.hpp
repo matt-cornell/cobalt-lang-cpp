@@ -30,7 +30,7 @@ namespace cobalt::types {
         return out;
       }
     };
-  }
+  } 
   struct tuple : type_base {
     std::vector<type_ptr> types;
     sstring name() const override;
@@ -64,7 +64,6 @@ namespace cobalt::types {
   struct array : type_base {
     type_ptr base;
     std::size_t length;
-    bool needs_stack() const noexcept override {return true;}
     sstring name() const override {
       if (length + 1) return sstring::get((llvm::Twine(base->name()) + "[]").str());
       else return sstring::get((llvm::Twine(base->name()) + "[" + llvm::Twine(length) + "]").str());
@@ -73,8 +72,8 @@ namespace cobalt::types {
     std::size_t align() const override {return alignof(void*);}
     llvm::Type* llvm_type(location loc, compile_context& ctx) const override {
       auto bt = base->llvm_type(loc, ctx);
-      if (length + 1) return llvm::StructType::get(llvm::PointerType::get(bt, 0), llvm::Type::getInt64Ty(*ctx.context));
-      else return llvm::PointerType::get(bt, 0);
+      if (length + 1) return llvm::PointerType::get(bt, 0);
+      else return llvm::StructType::get(llvm::PointerType::get(bt, 0), llvm::Type::getInt64Ty(*ctx.context));
     }
     static array const* get(type_ptr base, std::size_t length = -1) {
       if (!base) return nullptr;

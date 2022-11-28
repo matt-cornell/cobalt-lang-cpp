@@ -252,6 +252,7 @@ type_ptr cobalt::ast::float_ast::type(base_context& ctx) const {
 }
 type_ptr cobalt::ast::string_ast::type(base_context& ctx) const {(void)ctx; return suffix.empty() ? types::pointer::get(types::integer::get(8)) : nullptr;}
 type_ptr cobalt::ast::char_ast::type(base_context& ctx) const {(void)ctx; return suffix.empty() ?  types::integer::get(32) : nullptr;}
+type_ptr cobalt::ast::array_ast::type(base_context& ctx) const {return vals.empty() ? types::null::get() : vals.front().type();}
 // scope.hpp
 type_ptr cobalt::ast::module_ast::type(base_context& ctx) const {(void)ctx; return nullptr;}
 type_ptr cobalt::ast::import_ast::type(base_context& ctx) const {(void)ctx; return nullptr;}

@@ -1357,6 +1357,50 @@ typed_value cobalt::ast::char_ast::codegen(compile_context& ctx) const {
   }
   return {llvm::ConstantInt::get(llvm::Type::getInt32Ty(*ctx.context), out), types::integer::get(32)};
 }
+typed_value cobalt::ast::array_ast::codegen(compile_context& ctx) const {
+  bool is_const = true;
+  std::vector<llvm::Value*> outs;
+  type_ptr base = nullptr;
+  outs.reserve(vals.size());
+  for (AST const& val : vals) {
+    if (!val.is_const()) is_const = false;
+    auto tv = val(ctx);
+    if (base) {
+      if (tv.type != base) {
+        auto v = impl_convert(tv.value, tv.type, base, loc, ctx);
+        if (v) outs.push_back(v);
+        else {
+          ctx.flags.onerror(val.loc(), "array must be homogenous", ERROR);
+          return nullval;
+        }
+      }
+      else outs.push_back(tv.value);
+    }
+    else {
+      base = tv.type;
+      outs.push_back(tv.value);
+    }
+  }
+  if (base->kind == INTEGER && !static_cast<types::integer const*>(base)->nbits) base = types::integer::get(64);
+  auto bt = base->llvm_type(loc, ctx);
+  auto var_type = llvm::ArrayType::get(bt, vals.size());
+  if (is_const) {
+    auto arr = llvm::ConstantArray::get(var_type, reinterpret_cast<std::vector<llvm::Constant*>&>(outs));
+    auto v = ctx.builder.CreateBitCast(arr, llvm::PointerType::get(bt, 0));
+    return {v, types::array::get(base, outs.size())};
+  }
+  llvm::Value* insert_point;
+  if (is_static) insert_point = new llvm::GlobalVariable(*ctx.module, var_type, false, llvm::GlobalValue::PrivateLinkage, nullptr);
+  else insert_point = ctx.builder.CreateAlloca(var_type);
+  std::vector<llvm::Constant*> couts(outs.size());
+  for (std::size_t i = 0; i < outs.size(); ++i) couts[i] = llvm::dyn_cast_or_null<llvm::Constant>(outs[i]);
+  ctx.builder.CreateStore(llvm::ConstantArray::get(var_type, couts), insert_point);
+  for (std::size_t i = 0; i < outs.size(); ++i) if (!couts[i]) {
+    auto p = ctx.builder.CreateConstGEP2_64(insert_point->getType(), insert_point, 0, i);
+    ctx.builder.CreateStore(outs[i], p);
+  }
+  return {insert_point, types::array::get(base, vals.size())};
+}
 // scope.hpp
 typed_value cobalt::ast::module_ast::codegen(compile_context& ctx) const {
   auto vm = ctx.vars;
@@ -1535,6 +1579,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
         ctx.path = {name.substr(1)};
       }
       else ctx.path.push_back(name);
+      if (auto ast = val.dyn_cast<ast::array_ast>()) ast->is_static = true;
       auto tv = val(ctx);
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
@@ -1564,7 +1609,7 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
     else ctx.path.pop_back();
     if (!tv.type) return nullval;
     if (!llvm::isa<llvm::GlobalValue>(tv.value)) tv.value->setName(name);
-    vm->insert(sstring::get(local), tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? typed_value{tv.value, types::integer::get(64)} : tv);
+    auto corr_t = tv.type->kind == INTEGER && !static_cast<types::integer const*>(tv.type)->nbits ? types::integer::get(64) : tv.type;
     if (tv.type->needs_stack()) {
       llvm::Value* a;
       switch (tv.type->kind) {
@@ -1583,9 +1628,13 @@ typed_value cobalt::ast::vardef_ast::codegen(compile_context& ctx) const {
           a = ctx.builder.CreateAlloca(tv.type->llvm_type(loc, ctx), nullptr, name);
       }
       ctx.builder.CreateStore(tv.value, a);
+      ctx.vars->insert(sstring::get(local), typed_value{a, corr_t});
       return {a, tv.type};
     }
-    else return tv;
+    else {
+      ctx.vars->insert(sstring::get(local), typed_value{tv.value, corr_t});
+      return tv;
+    }
   }
 }
 typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
@@ -1649,6 +1698,7 @@ typed_value cobalt::ast::mutdef_ast::codegen(compile_context& ctx) const {
         ctx.path = {name.substr(1)};
       }
       else ctx.path.push_back(name);
+      if (auto ast = val.dyn_cast<ast::array_ast>()) ast->is_static = true;
       auto tv = val(ctx);
       if (name.front() == '.') std::swap(ctx.path, old_path);
       else ctx.path.pop_back();
